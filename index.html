@@ -1,0 +1,913 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>보드게임 컬렉션 매니저 (Board Game Shelf)</title>
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#f5f3ff',
+              100: '#ede9fe',
+              200: '#ddd6fe',
+              500: '#8b5cf6',
+              600: '#7c3aed',
+              700: '#6d28d9',
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Font Awesome Icons CDN -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  
+  <!-- Vue 3 CDN -->
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+
+  <!-- Custom CSS -->
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-100 min-h-screen transition-colors duration-200">
+  <div id="app" v-cloak class="flex flex-col min-h-screen">
+
+    <!-- Top Navigation Header -->
+    <header class="sticky top-0 z-30 glass-header bg-white/80 dark:bg-slate-900/85 border-b border-slate-200 dark:border-slate-800 transition-colors">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+        
+        <!-- Logo & Title -->
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white shadow-md shadow-purple-500/20">
+            <i class="fa-solid fa-dice-d20 text-xl"></i>
+          </div>
+          <div>
+            <h1 class="text-lg sm:text-xl font-bold tracking-tight text-slate-900 dark:text-white flex items-center gap-2">
+              보드게임 매니저
+              <span class="text-xs font-semibold px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-900/50 text-purple-700 dark:text-purple-300">
+                {{ games.length }}개
+              </span>
+            </h1>
+            <p class="text-xs text-slate-500 dark:text-slate-400 hidden sm:block">
+              구글 시트 연동 보드게임 컬렉션 & 필터
+            </p>
+          </div>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="flex items-center gap-2">
+          <!-- 오늘 뭐 하지? (랜덤 추천) -->
+          <button @click="openRandomPicker" 
+                  class="px-3 py-2 text-sm font-medium rounded-lg bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/50 transition flex items-center gap-1.5 border border-amber-200 dark:border-amber-800 shadow-sm"
+                  title="현재 조건에 맞는 게임 랜덤 뽑기">
+            <i class="fa-solid fa-shuffle"></i>
+            <span class="hidden md:inline">랜덤 추천</span>
+          </button>
+
+          <!-- 새로고침 -->
+          <button @click="loadData(true)" 
+                  :disabled="refreshing"
+                  class="p-2 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition"
+                  title="스프레드시트 최신 데이터 가져오기">
+            <i class="fa-solid fa-rotate-right" :class="{ 'fa-spin': refreshing }"></i>
+          </button>
+
+          <!-- 설정 모달 -->
+          <button @click="openSettingsModal" 
+                  class="p-2 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition"
+                  title="설정">
+            <i class="fa-solid fa-gear"></i>
+          </button>
+
+          <!-- 다크모드 토글 -->
+          <button @click="toggleDarkMode" 
+                  class="p-2 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition"
+                  :title="darkMode ? '라이트 모드' : '다크 모드'">
+            <i :class="darkMode ? 'fa-solid fa-sun text-amber-400' : 'fa-solid fa-moon text-slate-600'"></i>
+          </button>
+
+          <!-- 새 게임 등록 버튼 -->
+          <button @click="openAddModal" 
+                  class="ml-1 sm:ml-2 px-3.5 py-2 text-sm font-semibold rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm shadow-indigo-600/30 transition flex items-center gap-1.5">
+            <i class="fa-solid fa-plus"></i>
+            <span class="hidden sm:inline">게임 등록</span>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+
+      <!-- Filter Section -->
+      <section class="bg-white dark:bg-slate-800/80 rounded-2xl p-4 sm:p-5 border border-slate-200/80 dark:border-slate-700/80 shadow-sm space-y-4">
+        
+        <!-- 1. Quick Player Filter Bar -->
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div class="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
+            <span class="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider whitespace-nowrap">
+              플레이 인원:
+            </span>
+            <div class="flex gap-1.5">
+              <button 
+                v-for="p in ['ALL', 1, 2, 3, 4, 5, 6, 7]" 
+                :key="p"
+                @click="selectedPlayerCount = p"
+                :class="selectedPlayerCount === p 
+                  ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-500/30 font-bold' 
+                  : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'"
+                class="px-3 py-1 text-xs rounded-lg transition whitespace-nowrap">
+                {{ p === 'ALL' ? '전체' : (p === 7 ? '7인+' : p + '인') }}
+              </button>
+            </div>
+          </div>
+
+          <!-- View Mode Toggle & CSV Export -->
+          <div class="flex items-center gap-2 self-end sm:self-center">
+            <button @click="exportCSV" 
+                    class="text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 transition flex items-center gap-1.5">
+              <i class="fa-solid fa-file-csv text-emerald-600"></i>
+              CSV 내보내기
+            </button>
+            
+            <div class="bg-slate-100 dark:bg-slate-700/60 p-0.5 rounded-lg flex items-center border border-slate-200 dark:border-slate-600">
+              <button @click="setViewMode('card')" 
+                      :class="viewMode === 'card' ? 'bg-white dark:bg-slate-600 shadow-sm text-indigo-600 dark:text-white' : 'text-slate-500 dark:text-slate-400'"
+                      class="px-2.5 py-1 rounded text-xs transition"
+                      title="카드 뷰">
+                <i class="fa-solid fa-grip"></i>
+              </button>
+              <button @click="setViewMode('table')" 
+                      :class="viewMode === 'table' ? 'bg-white dark:bg-slate-600 shadow-sm text-indigo-600 dark:text-white' : 'text-slate-500 dark:text-slate-400'"
+                      class="px-2.5 py-1 rounded text-xs transition"
+                      title="테이블 뷰">
+                <i class="fa-solid fa-list"></i>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 2. Search & Detailed Dropdown Filters -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3 pt-2 border-t border-slate-100 dark:border-slate-700/50">
+          
+          <!-- Search Box (supports Korean Chosung!) -->
+          <div class="lg:col-span-4 relative">
+            <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-3 text-slate-400 text-sm"></i>
+            <input 
+              v-model="searchQuery" 
+              type="text" 
+              placeholder="게임명 검색 (초성 검색 가능: 예 ㄱㅇㅇ)..." 
+              class="w-full pl-9 pr-8 py-2 text-sm bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 transition"
+            />
+            <button v-if="searchQuery" @click="searchQuery = ''" class="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
+              <i class="fa-solid fa-xmark text-xs"></i>
+            </button>
+          </div>
+
+          <!-- Difficulty Filter -->
+          <div class="lg:col-span-2">
+            <select v-model="selectedDifficulty" class="w-full py-2 px-3 text-sm bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400">
+              <option value="ALL">모든 난이도</option>
+              <option value="입문">입문</option>
+              <option value="하">초급 / 하</option>
+              <option value="중하">중하</option>
+              <option value="중">중</option>
+              <option value="상">상 (헤비)</option>
+            </select>
+          </div>
+
+          <!-- Owner Filter -->
+          <div class="lg:col-span-2">
+            <select v-model="selectedOwner" class="w-full py-2 px-3 text-sm bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400">
+              <option value="ALL">모든 소유자</option>
+              <option v-for="o in ownersList" :key="o.name" :value="o.name">
+                {{ o.name }} ({{ o.count }})
+              </option>
+            </select>
+          </div>
+
+          <!-- System Filter -->
+          <div class="lg:col-span-2">
+            <select v-model="selectedSystem" class="w-full py-2 px-3 text-sm bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400">
+              <option value="ALL">모든 시스템</option>
+              <option v-for="s in systemsList" :key="s.name" :value="s.name">
+                {{ s.name }} ({{ s.count }})
+              </option>
+            </select>
+          </div>
+
+          <!-- Sort Order -->
+          <div class="lg:col-span-2">
+            <select v-model="sortBy" class="w-full py-2 px-3 text-sm bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400">
+              <option value="name_asc">이름순 (가나다)</option>
+              <option value="name_desc">이름 역순 (하파타)</option>
+              <option value="diff_asc">난이도 쉬운순</option>
+              <option value="diff_desc">난이도 어려운순</option>
+              <option value="player_asc">인원수 적은순</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Active Filter Pills & Count -->
+        <div class="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 pt-1">
+          <div class="flex items-center gap-2 flex-wrap">
+            <span>필터링된 게임: <strong class="text-indigo-600 dark:text-indigo-400 font-semibold">{{ filteredGames.length }}</strong>개</span>
+            <span v-if="selectedPlayerCount !== 'ALL'" class="inline-flex items-center gap-1 bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 px-2 py-0.5 rounded-md">
+              인원: {{ selectedPlayerCount === 7 ? '7인+' : selectedPlayerCount + '인' }}
+              <button @click="selectedPlayerCount = 'ALL'"><i class="fa-solid fa-xmark text-[10px]"></i></button>
+            </span>
+            <span v-if="selectedDifficulty !== 'ALL'" class="inline-flex items-center gap-1 bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 px-2 py-0.5 rounded-md">
+              난이도: {{ selectedDifficulty }}
+              <button @click="selectedDifficulty = 'ALL'"><i class="fa-solid fa-xmark text-[10px]"></i></button>
+            </span>
+            <span v-if="selectedOwner !== 'ALL'" class="inline-flex items-center gap-1 bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 px-2 py-0.5 rounded-md">
+              소유자: {{ selectedOwner }}
+              <button @click="selectedOwner = 'ALL'"><i class="fa-solid fa-xmark text-[10px]"></i></button>
+            </span>
+            <span v-if="selectedSystem !== 'ALL'" class="inline-flex items-center gap-1 bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 px-2 py-0.5 rounded-md">
+              시스템: {{ selectedSystem }}
+              <button @click="selectedSystem = 'ALL'"><i class="fa-solid fa-xmark text-[10px]"></i></button>
+            </span>
+          </div>
+
+          <button v-if="searchQuery || selectedPlayerCount !== 'ALL' || selectedDifficulty !== 'ALL' || selectedOwner !== 'ALL' || selectedSystem !== 'ALL'"
+                  @click="searchQuery = ''; selectedPlayerCount = 'ALL'; selectedDifficulty = 'ALL'; selectedOwner = 'ALL'; selectedSystem = 'ALL'"
+                  class="text-indigo-600 dark:text-indigo-400 hover:underline">
+            필터 초기화
+          </button>
+        </div>
+
+      </section>
+
+      <!-- Connection / Error Alert Banner -->
+      <div v-if="error" class="p-4 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-2xl flex items-start gap-3 text-xs">
+        <i class="fa-solid fa-triangle-exclamation text-amber-500 text-base mt-0.5 shrink-0"></i>
+        <div class="flex-1 space-y-1">
+          <p class="font-bold text-amber-900 dark:text-amber-200">스프레드시트 원격 연결 알림</p>
+          <p class="text-amber-800 dark:text-amber-300 leading-relaxed">
+            브라우저의 보안 정책(CORS)으로 인해 구글 시트 원격 조회가 제한되었습니다. 현재 <strong>내장된 초기 데이터({{ games.length }}개)</strong>로 정상 작동 중입니다.
+          </p>
+          <div class="flex items-center gap-3 pt-1">
+            <button @click="openSettingsModal" class="font-bold text-indigo-600 dark:text-indigo-400 hover:underline">
+              <i class="fa-solid fa-gear mr-1"></i> Apps Script 연동하여 실시간 동기화하기 &rarr;
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Loading State -->
+      <div v-if="loading" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 py-8">
+        <div v-for="n in 8" :key="n" class="bg-white dark:bg-slate-800 rounded-xl p-5 border border-slate-200 dark:border-slate-700 animate-pulse space-y-3">
+          <div class="h-5 bg-slate-200 dark:bg-slate-700 rounded w-3/4"></div>
+          <div class="h-4 bg-slate-100 dark:bg-slate-700/50 rounded w-1/2"></div>
+          <div class="h-3 bg-slate-100 dark:bg-slate-700/50 rounded w-full"></div>
+          <div class="flex gap-2 pt-2">
+            <div class="h-5 bg-slate-200 dark:bg-slate-700 rounded-full w-16"></div>
+            <div class="h-5 bg-slate-200 dark:bg-slate-700 rounded-full w-12"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Empty State -->
+      <div v-else-if="filteredGames.length === 0" class="text-center py-16 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 p-8">
+        <div class="w-16 h-16 mx-auto mb-4 rounded-full bg-slate-100 dark:bg-slate-700 flex items-center justify-center text-slate-400 text-2xl">
+          <i class="fa-solid fa-ghost"></i>
+        </div>
+        <h3 class="text-base font-bold text-slate-700 dark:text-slate-200">조건에 맞는 게임을 찾을 수 없습니다</h3>
+        <p class="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-sm mx-auto">
+          검색어나 선택된 필터(인원, 난이도, 소유자)를 조정해보세요.
+        </p>
+        <button @click="searchQuery = ''; selectedPlayerCount = 'ALL'; selectedDifficulty = 'ALL'; selectedOwner = 'ALL'; selectedSystem = 'ALL'"
+                class="mt-4 px-4 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition">
+          모든 필터 초기화
+        </button>
+      </div>
+
+      <!-- CARD VIEW -->
+      <div v-else-if="viewMode === 'card'" class="space-y-6">
+        <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+          <div 
+            v-for="game in paginatedGames" 
+            :key="game.id"
+            @click="openDetailModal(game)"
+            class="game-card group cursor-pointer bg-white dark:bg-slate-800 rounded-2xl p-4 sm:p-5 border border-slate-200/80 dark:border-slate-700/80 hover:border-indigo-300 dark:hover:border-indigo-600/60 shadow-sm hover:shadow-md flex flex-col justify-between transition-all relative">
+            
+            <!-- Top info -->
+            <div>
+              <div class="flex items-start justify-between gap-2 mb-2">
+                <h3 class="font-bold text-slate-900 dark:text-slate-100 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition text-base line-clamp-2">
+                  {{ game.name }}
+                </h3>
+
+                <!-- Difficulty Badge -->
+                <span v-if="game.difficulty" 
+                      :class="`diff-badge-${game.difficulty}`"
+                      class="text-[11px] font-semibold px-2 py-0.5 rounded-full border shrink-0">
+                  {{ game.difficulty }}
+                </span>
+              </div>
+
+              <!-- Player count info -->
+              <div class="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300 mb-3 flex-wrap">
+                <span class="inline-flex items-center gap-1 font-medium">
+                  <i class="fa-solid fa-users text-slate-400"></i>
+                  <template v-if="game.minPlayers && game.maxPlayers">
+                    {{ game.minPlayers === game.maxPlayers ? game.minPlayers + '인' : game.minPlayers + '~' + game.maxPlayers + '인' }}
+                  </template>
+                  <template v-else-if="game.maxPlayers">
+                    최대 {{ game.maxPlayers }}인
+                  </template>
+                  <template v-else-if="game.minPlayers">
+                    최소 {{ game.minPlayers }}인
+                  </template>
+                  <template v-else>
+                    인원 미정
+                  </template>
+                </span>
+
+                <!-- Best Player Match Badge -->
+                <span v-if="game.bestPlayers" 
+                      :class="isBestPlayerMatch(game, selectedPlayerCount) 
+                        ? 'bg-amber-400 text-amber-950 font-bold animate-pulse' 
+                        : 'bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300'"
+                      class="text-[10px] px-2 py-0.5 rounded-full flex items-center gap-1"
+                      title="베스트 인원">
+                  <i class="fa-solid fa-crown text-[9px]"></i>
+                  베스트: {{ game.bestPlayers }}
+                </span>
+              </div>
+
+              <!-- Game System Tags -->
+              <div v-if="game.system" class="flex flex-wrap gap-1 mb-3">
+                <span 
+                  v-for="sys in game.system.split(/[,/]/).slice(0, 3)" 
+                  :key="sys"
+                  class="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700/60 text-slate-600 dark:text-slate-300">
+                  {{ sys.trim() }}
+                </span>
+              </div>
+
+              <!-- Notes / Description -->
+              <p v-if="game.notes" class="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 italic mb-2">
+                "{{ game.notes }}"
+              </p>
+            </div>
+
+            <!-- Card Footer: Owner & Status -->
+            <div class="pt-3 border-t border-slate-100 dark:border-slate-700/60 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
+              <span class="inline-flex items-center gap-1">
+                <i class="fa-solid fa-user text-slate-400"></i>
+                <span class="font-medium text-slate-700 dark:text-slate-300">{{ game.owner || '소유자 미지정' }}</span>
+              </span>
+
+              <span v-if="game.isLocal" class="text-[10px] text-amber-500 font-medium">
+                (로컬 저장됨)
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Load More Button -->
+        <div v-if="hasMoreGames" class="text-center pt-4">
+          <button @click="loadMore" 
+                  class="px-6 py-2.5 text-sm font-semibold rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/50 shadow-sm transition">
+            더 보기 ({{ paginatedGames.length }} / {{ filteredGames.length }})
+          </button>
+        </div>
+      </div>
+
+      <!-- TABLE VIEW -->
+      <div v-else-if="viewMode === 'table'" class="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-xs border-collapse">
+            <thead class="bg-slate-50 dark:bg-slate-900/60 border-b border-slate-200 dark:border-slate-700 text-slate-500 uppercase tracking-wider font-semibold">
+              <tr>
+                <th class="py-3 px-4">게임명</th>
+                <th class="py-3 px-3">인원</th>
+                <th class="py-3 px-3">베스트인원</th>
+                <th class="py-3 px-3">난이도</th>
+                <th class="py-3 px-4">게임시스템</th>
+                <th class="py-3 px-3">소유자</th>
+                <th class="py-3 px-4">비고</th>
+                <th class="py-3 px-3 text-right">관리</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100 dark:divide-slate-700/50">
+              <tr 
+                v-for="game in paginatedGames" 
+                :key="game.id"
+                class="hover:bg-indigo-50/40 dark:hover:bg-slate-700/30 transition cursor-pointer"
+                @click="openDetailModal(game)">
+                <td class="py-3 px-4 font-semibold text-slate-900 dark:text-slate-100">
+                  {{ game.name }}
+                </td>
+                <td class="py-3 px-3 whitespace-nowrap text-slate-600 dark:text-slate-300">
+                  <template v-if="game.minPlayers && game.maxPlayers">
+                    {{ game.minPlayers === game.maxPlayers ? game.minPlayers + '인' : game.minPlayers + '~' + game.maxPlayers + '인' }}
+                  </template>
+                  <template v-else-if="game.maxPlayers">최대 {{ game.maxPlayers }}인</template>
+                  <template v-else-if="game.minPlayers">최소 {{ game.minPlayers }}인</template>
+                  <span v-else class="text-slate-400">-</span>
+                </td>
+                <td class="py-3 px-3 whitespace-nowrap">
+                  <span v-if="game.bestPlayers" 
+                        :class="isBestPlayerMatch(game, selectedPlayerCount) ? 'bg-amber-400 text-amber-950 font-bold' : 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300'"
+                        class="px-2 py-0.5 rounded-full text-[10px]">
+                    {{ game.bestPlayers }}
+                  </span>
+                  <span v-else class="text-slate-400">-</span>
+                </td>
+                <td class="py-3 px-3 whitespace-nowrap">
+                  <span v-if="game.difficulty" :class="`diff-badge-${game.difficulty}`" class="px-2 py-0.5 rounded-full border text-[10px]">
+                    {{ game.difficulty }}
+                  </span>
+                  <span v-else class="text-slate-400">-</span>
+                </td>
+                <td class="py-3 px-4 text-slate-600 dark:text-slate-300 max-w-xs truncate">
+                  {{ game.system || '-' }}
+                </td>
+                <td class="py-3 px-3 whitespace-nowrap font-medium text-slate-700 dark:text-slate-300">
+                  {{ game.owner || '-' }}
+                </td>
+                <td class="py-3 px-4 text-slate-500 dark:text-slate-400 max-w-xs truncate">
+                  {{ game.notes || '-' }}
+                </td>
+                <td class="py-3 px-3 text-right whitespace-nowrap" @click.stop>
+                  <button @click="openEditModal(game)" class="text-slate-400 hover:text-indigo-600 p-1 mr-1" title="수정">
+                    <i class="fa-solid fa-pen-to-square"></i>
+                  </button>
+                  <button @click="deleteGame(game)" class="text-slate-400 hover:text-rose-600 p-1" title="삭제">
+                    <i class="fa-solid fa-trash-can"></i>
+                  </button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Load More for Table -->
+        <div v-if="hasMoreGames" class="p-4 border-t border-slate-100 dark:border-slate-700 text-center">
+          <button @click="loadMore" class="px-5 py-2 text-xs font-semibold rounded-lg bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 transition">
+            더 보기 ({{ paginatedGames.length }} / {{ filteredGames.length }})
+          </button>
+        </div>
+      </div>
+
+    </main>
+
+    <!-- FOOTER -->
+    <footer class="mt-auto border-t border-slate-200 dark:border-slate-800 bg-white/50 dark:bg-slate-900/50 py-4 text-center text-xs text-slate-400">
+      <div class="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
+        <span>보드게임 컬렉션 매니저 &copy; 2026 &bull; Google Sheets & BGG API</span>
+        <div class="flex items-center gap-3">
+          <button @click="openSettingsModal" class="hover:text-indigo-600 dark:hover:text-indigo-400">설정 & Apps Script</button>
+          <span>&bull;</span>
+          <a href="https://boardgamegeek.com" target="_blank" class="hover:text-indigo-600 dark:hover:text-indigo-400">BoardGameGeek</a>
+        </div>
+      </div>
+    </footer>
+
+    <!-- ==================== MODALS ==================== -->
+
+    <!-- 1. GAME DETAIL MODAL -->
+    <div v-if="isDetailModalOpen && activeGame" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
+      <div class="bg-white dark:bg-slate-800 rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 dark:border-slate-700 space-y-5 animate-in fade-in zoom-in-95 duration-150">
+        
+        <!-- Header -->
+        <div class="flex items-start justify-between gap-3">
+          <div>
+            <div class="flex items-center gap-2">
+              <span v-if="activeGame.difficulty" :class="`diff-badge-${activeGame.difficulty}`" class="text-xs font-bold px-2.5 py-0.5 rounded-full border">
+                {{ activeGame.difficulty }}
+              </span>
+              <span v-if="activeGame.owner" class="text-xs bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-2 py-0.5 rounded-full">
+                소유자: {{ activeGame.owner }}
+              </span>
+            </div>
+            <h2 class="text-xl font-bold text-slate-900 dark:text-white mt-1.5">
+              {{ activeGame.name }}
+            </h2>
+          </div>
+          <button @click="isDetailModalOpen = false" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1">
+            <i class="fa-solid fa-xmark text-lg"></i>
+          </button>
+        </div>
+
+        <!-- Info Grid -->
+        <div class="grid grid-cols-2 gap-3 p-4 bg-slate-50 dark:bg-slate-900/60 rounded-2xl text-xs">
+          <div>
+            <span class="text-slate-400 block mb-0.5">플레이 인원</span>
+            <span class="font-bold text-slate-800 dark:text-slate-200 text-sm">
+              <template v-if="activeGame.minPlayers && activeGame.maxPlayers">
+                {{ activeGame.minPlayers === activeGame.maxPlayers ? activeGame.minPlayers + '인' : activeGame.minPlayers + '~' + activeGame.maxPlayers + '인' }}
+              </template>
+              <template v-else-if="activeGame.maxPlayers">최대 {{ activeGame.maxPlayers }}인</template>
+              <template v-else-if="activeGame.minPlayers">최소 {{ activeGame.minPlayers }}인</template>
+              <template v-else>미정</template>
+            </span>
+          </div>
+
+          <div>
+            <span class="text-slate-400 block mb-0.5">베스트 인원</span>
+            <span class="font-bold text-amber-600 dark:text-amber-400 text-sm">
+              {{ activeGame.bestPlayers || '정보 없음' }}
+            </span>
+          </div>
+
+          <div class="col-span-2 pt-2 border-t border-slate-200/60 dark:border-slate-800">
+            <span class="text-slate-400 block mb-0.5">게임 시스템</span>
+            <span class="font-medium text-slate-800 dark:text-slate-200">
+              {{ activeGame.system || '지정되지 않음' }}
+            </span>
+          </div>
+
+          <div v-if="activeGame.notes" class="col-span-2 pt-2 border-t border-slate-200/60 dark:border-slate-800">
+            <span class="text-slate-400 block mb-0.5">비고</span>
+            <p class="text-slate-700 dark:text-slate-300">
+              {{ activeGame.notes }}
+            </p>
+          </div>
+        </div>
+
+        <!-- BGG Search Link -->
+        <div class="flex items-center justify-between text-xs pt-1">
+          <a :href="`https://boardgamegeek.com/geeksearch.php?action=search&objecttype=boardgame&q=${encodeURIComponent(activeGame.name)}`" 
+             target="_blank"
+             class="text-indigo-600 dark:text-indigo-400 hover:underline inline-flex items-center gap-1 font-medium">
+            <i class="fa-solid fa-arrow-up-right-from-square"></i>
+            BoardGameGeek에서 이 게임 검색
+          </a>
+        </div>
+
+        <!-- Actions -->
+        <div class="flex items-center justify-between pt-3 border-t border-slate-100 dark:border-slate-700">
+          <button @click="deleteGame(activeGame)" class="px-3 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-xl transition">
+            <i class="fa-solid fa-trash-can mr-1"></i> 게임 삭제
+          </button>
+          
+          <div class="flex items-center gap-2">
+            <button @click="openEditModal(activeGame)" class="px-4 py-2 text-xs font-semibold text-indigo-600 bg-indigo-50 dark:bg-indigo-950/50 hover:bg-indigo-100 rounded-xl transition">
+              <i class="fa-solid fa-pen mr-1"></i> 수정
+            </button>
+            <button @click="isDetailModalOpen = false" class="px-4 py-2 text-xs font-semibold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 rounded-xl transition">
+              닫기
+            </button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- 2. GAME ADD / EDIT MODAL -->
+    <div v-if="isEditModalOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm overflow-y-auto">
+      <div class="bg-white dark:bg-slate-800 rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 dark:border-slate-700 space-y-4 my-8">
+        
+        <!-- Header -->
+        <div class="flex items-center justify-between border-b border-slate-100 dark:border-slate-700/60 pb-3">
+          <h2 class="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+            <i :class="isEditing ? 'fa-solid fa-pen-to-square text-indigo-500' : 'fa-solid fa-plus-circle text-emerald-500'"></i>
+            {{ isEditing ? '게임 정보 수정' : '새 보드게임 등록' }}
+          </h2>
+          <button @click="isEditModalOpen = false" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
+            <i class="fa-solid fa-xmark text-lg"></i>
+          </button>
+        </div>
+
+        <!-- BGG Auto-Fill Quick Action Banner -->
+        <div class="p-3.5 bg-gradient-to-r from-purple-50 to-indigo-50 dark:from-purple-950/40 dark:to-indigo-950/40 rounded-2xl border border-purple-200/80 dark:border-purple-800/60 flex items-center justify-between">
+          <div class="flex items-center gap-2.5">
+            <div class="w-8 h-8 rounded-lg bg-purple-600 text-white flex items-center justify-center text-sm font-bold shadow-sm">
+              BGG
+            </div>
+            <div>
+              <p class="text-xs font-bold text-purple-900 dark:text-purple-200">BoardGameGeek 정보 자동 가져오기</p>
+              <p class="text-[11px] text-purple-700 dark:text-purple-300">인원수, 베스트, 웨이트(난이도), 시스템 자동 입력</p>
+            </div>
+          </div>
+          <button @click="openBggSearch" class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-purple-600 hover:bg-purple-700 text-white shadow-sm transition shrink-0">
+            <i class="fa-solid fa-wand-magic-sparkles mr-1"></i> BGG 검색
+          </button>
+        </div>
+
+        <!-- Form Fields -->
+        <form @submit.prevent="saveGame" class="space-y-3.5 text-xs">
+          
+          <!-- 게임명 -->
+          <div>
+            <label class="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+              게임명 <span class="text-rose-500">*</span>
+            </label>
+            <input v-model="editForm.name" type="text" required placeholder="예: 가이아 프로젝트" 
+                   class="w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none" />
+          </div>
+
+          <!-- 최소 / 최대 인원 -->
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block font-semibold text-slate-700 dark:text-slate-300 mb-1">최소 인원</label>
+              <input v-model.number="editForm.minPlayers" type="number" min="1" max="99" placeholder="예: 2" 
+                     class="w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none" />
+            </div>
+            <div>
+              <label class="block font-semibold text-slate-700 dark:text-slate-300 mb-1">최대 인원</label>
+              <input v-model.number="editForm.maxPlayers" type="number" min="1" max="99" placeholder="예: 4" 
+                     class="w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none" />
+            </div>
+          </div>
+
+          <!-- 베스트 인원 & 난이도 -->
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block font-semibold text-slate-700 dark:text-slate-300 mb-1">베스트 인원 (주관적)</label>
+              <input v-model="editForm.bestPlayers" type="text" placeholder="예: 3 또는 4+" 
+                     class="w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none" />
+            </div>
+            <div>
+              <label class="block font-semibold text-slate-700 dark:text-slate-300 mb-1">난이도</label>
+              <select v-model="editForm.difficulty" class="w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none">
+                <option value="">선택 안 함</option>
+                <option value="입문">입문</option>
+                <option value="하">초급 / 하</option>
+                <option value="중하">중하</option>
+                <option value="중">중</option>
+                <option value="상">상 (헤비)</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- 게임 시스템 -->
+          <div>
+            <label class="block font-semibold text-slate-700 dark:text-slate-300 mb-1">게임 시스템 (메커니즘)</label>
+            <input v-model="editForm.system" type="text" placeholder="예: 일꾼놓기, 타일놓기, 덱빌딩" 
+                   class="w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none" />
+          </div>
+
+          <!-- 소유자 -->
+          <div>
+            <label class="block font-semibold text-slate-700 dark:text-slate-300 mb-1">소유자</label>
+            <input v-model="editForm.owner" type="text" placeholder="예: 구슬/인철, 명수, 현정" 
+                   class="w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none" />
+            <!-- 빠른 소유자 선택 칩 -->
+            <div class="flex flex-wrap gap-1 mt-1.5">
+              <button 
+                v-for="o in ownersList.slice(0, 6)" 
+                :key="o.name" 
+                type="button"
+                @click="editForm.owner = o.name"
+                class="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200">
+                {{ o.name }}
+              </button>
+            </div>
+          </div>
+
+          <!-- 비고 -->
+          <div>
+            <label class="block font-semibold text-slate-700 dark:text-slate-300 mb-1">비고 (확장 여부, 설명 등)</label>
+            <textarea v-model="editForm.notes" rows="2" placeholder="예: 확장 보유, 2인 전용, 카드 슬리브 완료" 
+                      class="w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"></textarea>
+          </div>
+
+          <!-- Footer Action Buttons -->
+          <div class="flex items-center justify-end gap-2 pt-3 border-t border-slate-100 dark:border-slate-700">
+            <button type="button" @click="isEditModalOpen = false" class="px-4 py-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 font-semibold transition">
+              취소
+            </button>
+            <button type="submit" class="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold shadow-sm transition">
+              {{ isEditing ? '수정 내용 저장' : '등록하기' }}
+            </button>
+          </div>
+
+        </form>
+
+      </div>
+    </div>
+
+    <!-- 3. BGG SEARCH SUB-MODAL -->
+    <div v-if="isBggModalOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+      <div class="bg-white dark:bg-slate-800 rounded-3xl max-w-md w-full p-5 shadow-2xl border border-slate-200 dark:border-slate-700 space-y-4">
+        
+        <div class="flex items-center justify-between">
+          <h3 class="font-bold text-slate-900 dark:text-white flex items-center gap-2">
+            <i class="fa-solid fa-magnifying-glass text-purple-600"></i> BoardGameGeek 검색
+          </h3>
+          <button @click="isBggModalOpen = false" class="text-slate-400 hover:text-slate-600">
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </div>
+
+        <!-- Search Input -->
+        <div class="flex gap-2">
+          <input 
+            v-model="bggQuery" 
+            @keyup.enter="searchBgg"
+            type="text" 
+            placeholder="게임명 입력 (영문 권장: Catan, Gaia...)" 
+            class="flex-1 px-3 py-2 text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-purple-500 outline-none" 
+          />
+          <button @click="searchBgg" :disabled="bggLoading" class="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold rounded-xl transition">
+            <i v-if="bggLoading" class="fa-solid fa-spinner fa-spin"></i>
+            <span v-else>검색</span>
+          </button>
+        </div>
+
+        <p class="text-[11px] text-slate-400">
+          * BGG는 영문 검색 시 결과가 가장 정확합니다 (예: "가이아 프로젝트" ➔ "Gaia Project")
+        </p>
+
+        <!-- Search Results List -->
+        <div class="max-h-64 overflow-y-auto space-y-1.5 divide-y divide-slate-100 dark:divide-slate-700/50">
+          <div v-if="bggLoading" class="text-center py-6 text-xs text-slate-400">
+            <i class="fa-solid fa-spinner fa-spin text-lg text-purple-600 mb-2"></i>
+            <p>BGG에서 게임 정보를 가져오는 중...</p>
+          </div>
+
+          <div v-else-if="bggResults.length === 0" class="text-center py-6 text-xs text-slate-400">
+            검색어를 입력하고 검색 버튼을 눌러주세요.
+          </div>
+
+          <div 
+            v-for="item in bggResults" 
+            :key="item.id" 
+            @click="selectBggGame(item.id)"
+            class="pt-2 pb-1.5 px-2.5 rounded-xl hover:bg-purple-50 dark:hover:bg-purple-950/40 cursor-pointer flex items-center justify-between transition group">
+            <div>
+              <p class="text-xs font-semibold text-slate-800 dark:text-slate-200 group-hover:text-purple-600 dark:group-hover:text-purple-400">
+                {{ item.name }}
+              </p>
+              <span v-if="item.year" class="text-[10px] text-slate-400">
+                출시연도: {{ item.year }}년
+              </span>
+            </div>
+            <span class="text-xs text-purple-600 font-semibold opacity-0 group-hover:opacity-100 transition">
+              선택 &rarr;
+            </span>
+          </div>
+        </div>
+
+        <div class="pt-2 text-right">
+          <button @click="isBggModalOpen = false" class="px-4 py-1.5 text-xs text-slate-500 hover:text-slate-700">
+            닫기
+          </button>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- 4. RANDOM PICKER MODAL ("오늘 뭐 하지?") -->
+    <div v-if="isRandomModalOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+      <div class="bg-white dark:bg-slate-800 rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 dark:border-slate-700 text-center space-y-4">
+        
+        <div class="w-16 h-16 mx-auto rounded-2xl bg-amber-100 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 flex items-center justify-center text-3xl shadow-inner">
+          <i class="fa-solid fa-dice" :class="{ 'fa-spin': isSpinning }"></i>
+        </div>
+
+        <div>
+          <span class="text-xs font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wider">
+            🎲 오늘의 모임 추천 게임
+          </span>
+          <h3 class="text-2xl font-black text-slate-900 dark:text-white mt-2 min-h-[2rem]">
+            {{ randomPickedGame ? randomPickedGame.name : '추천 게임을 고르는 중...' }}
+          </h3>
+        </div>
+
+        <!-- Detail preview of picked game -->
+        <div v-if="randomPickedGame" class="p-3 bg-slate-50 dark:bg-slate-900/60 rounded-2xl text-xs space-y-1 text-slate-600 dark:text-slate-300">
+          <p>
+            <strong>인원:</strong> 
+            {{ randomPickedGame.minPlayers || '?' }}~{{ randomPickedGame.maxPlayers || '?' }}인 
+            (베스트: {{ randomPickedGame.bestPlayers || '-' }})
+          </p>
+          <p>
+            <strong>난이도:</strong> {{ randomPickedGame.difficulty || '정보 없음' }} &bull;
+            <strong>소유자:</strong> {{ randomPickedGame.owner || '공용' }}
+          </p>
+          <p v-if="randomPickedGame.system" class="text-slate-400 italic">
+            {{ randomPickedGame.system }}
+          </p>
+        </div>
+
+        <div class="flex items-center justify-center gap-2 pt-2">
+          <button @click="spinRandomGame" :disabled="isSpinning" class="px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs rounded-xl shadow-sm transition flex items-center gap-1.5">
+            <i class="fa-solid fa-shuffle"></i> 다시 뽑기
+          </button>
+          <button v-if="randomPickedGame" @click="isRandomModalOpen = false; openDetailModal(randomPickedGame)" class="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-sm transition">
+            상세 보기
+          </button>
+          <button @click="isRandomModalOpen = false" class="px-4 py-2.5 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 font-semibold text-xs rounded-xl transition">
+            닫기
+          </button>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- 5. SETTINGS MODAL -->
+    <div v-if="isSettingsModalOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm overflow-y-auto">
+      <div class="bg-white dark:bg-slate-800 rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 dark:border-slate-700 space-y-5 my-8">
+        
+        <div class="flex items-center justify-between border-b border-slate-100 dark:border-slate-700 pb-3">
+          <h3 class="font-bold text-slate-900 dark:text-white flex items-center gap-2">
+            <i class="fa-solid fa-gear text-slate-500"></i> 애플리케이션 설정
+          </h3>
+          <button @click="isSettingsModalOpen = false" class="text-slate-400 hover:text-slate-600">
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </div>
+
+        <div class="space-y-4 text-xs">
+          
+          <!-- Google Sheets CSV URL -->
+          <div>
+            <label class="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+              구글 스프레드시트 게시 CSV URL (읽기용)
+            </label>
+            <input v-model="settingsForm.csvUrl" type="url" class="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500" />
+            <p class="text-[11px] text-slate-400 mt-1">스프레드시트 [파일] &gt; [공유] &gt; [웹에 게시]에서 CSV 형식으로 생성된 링크입니다.</p>
+          </div>
+
+          <!-- Google Apps Script Web App URL -->
+          <div class="p-3 bg-indigo-50/50 dark:bg-indigo-950/30 rounded-2xl border border-indigo-100 dark:border-indigo-900/50 space-y-2">
+            <label class="block font-bold text-indigo-900 dark:text-indigo-200">
+              Google Apps Script 웹 앱 URL (시트 실시간 쓰기용)
+            </label>
+            <input v-model="settingsForm.gasUrl" type="url" placeholder="https://script.google.com/macros/s/.../exec" 
+                   class="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500" />
+            <p class="text-[11px] text-indigo-700 dark:text-indigo-300 leading-relaxed">
+              시트에 실시간으로 추가/수정/삭제를 반영하려면 구글 시트의 [확장 프로그램 &gt; Apps Script]에 제공된 <code>google-apps-script.js</code> 코드를 붙여넣고 웹 앱으로 배포한 URL을 입력하세요. 미입력 시에는 브라우저 로컬 저장소에 안전하게 보관됩니다.
+            </p>
+          </div>
+
+          <!-- CSV File Import Card -->
+          <div class="p-3 bg-emerald-50/50 dark:bg-emerald-950/30 rounded-2xl border border-emerald-100 dark:border-emerald-900/50 space-y-2">
+            <div>
+              <span class="block font-bold text-emerald-900 dark:text-emerald-200">
+                📁 CSV 파일 직접 불러오기 (즉시 동기화)
+              </span>
+              <p class="text-[11px] text-emerald-700 dark:text-emerald-300 mt-0.5">
+                구글 시트 메뉴 [파일] &gt; [다운로드] &gt; [쉼표로 구분된 값(.csv)]으로 받은 파일을 선택하면 즉시 최신 데이터로 업데이트됩니다.
+              </p>
+            </div>
+            <label class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg cursor-pointer text-xs font-semibold shadow-sm transition">
+              <i class="fa-solid fa-upload"></i> CSV 파일 선택
+              <input type="file" accept=".csv" @change="handleCsvUpload" class="hidden" />
+            </label>
+          </div>
+
+          <!-- BGG API Token -->
+          <div>
+            <label class="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+              BoardGameGeek API 토큰 (선택 사항)
+            </label>
+            <input v-model="settingsForm.bggToken" type="text" placeholder="BGG Bearer Token (필요 시)" 
+                   class="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500" />
+            <p class="text-[11px] text-slate-400 mt-1">BGG 개발자 계정에서 발급받은 인증 토큰이 있다면 입력해주세요.</p>
+          </div>
+
+          <!-- Reset Local Storage -->
+          <div class="pt-2 border-t border-slate-100 dark:border-slate-700 flex items-center justify-between">
+            <button @click="resetLocalData" class="text-rose-500 hover:text-rose-700 font-semibold">
+              <i class="fa-solid fa-arrows-rotate mr-1"></i> 로컬 임시 데이터 초기화
+            </button>
+            <button @click="exportCSV" class="text-slate-600 dark:text-slate-400 hover:underline">
+              CSV 백업 다운로드
+            </button>
+          </div>
+
+        </div>
+
+        <div class="flex items-center justify-end gap-2 pt-3 border-t border-slate-100 dark:border-slate-700">
+          <button @click="isSettingsModalOpen = false" class="px-4 py-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 font-semibold text-xs">
+            취소
+          </button>
+          <button @click="saveSettings" class="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs shadow-sm">
+            설정 저장
+          </button>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- FLOATING TOAST NOTIFICATION -->
+    <div v-if="toast.show" 
+         :class="toast.type === 'error' ? 'bg-rose-600 text-white' : (toast.type === 'success' ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-white')"
+         class="fixed bottom-6 right-6 z-50 px-4 py-3 rounded-2xl shadow-xl flex items-center gap-2 text-xs font-semibold animate-in slide-in-from-bottom-5 duration-200">
+      <i :class="toast.type === 'error' ? 'fa-solid fa-circle-exclamation' : (toast.type === 'success' ? 'fa-solid fa-circle-check' : 'fa-solid fa-circle-info')"></i>
+      <span>{{ toast.message }}</span>
+    </div>
+
+  </div>
+
+  <!-- Scripts -->
+  <script src="initial-data.js"></script>
+  <script src="sheets-service.js"></script>
+  <script src="bgg-service.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,16 @@
+{
+  "name": "boardgame-shelf",
+  "version": "1.0.0",
+  "description": "Google Sheets & BoardGameGeek Board Game Manager Web Application",
+  "type": "module",
+  "scripts": {
+    "start": "npx serve ."
+  },
+  "keywords": [
+    "boardgame",
+    "google-sheets",
+    "bgg",
+    "vue"
+  ],
+  "license": "MIT"
+}
