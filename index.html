@@ -3,8 +3,16 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#7c3aed">
   <title>보드게임 컬렉션 매니저 (Board Game Shelf)</title>
   
+  <!-- PWA Manifest & Icons -->
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%237c3aed'/><text x='50' y='68' font-size='55' text-anchor='middle' fill='white'>🎲</text></svg>">
+
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
   <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
@@ -62,13 +70,45 @@
         </div>
 
         <!-- Action Buttons -->
-        <div class="flex items-center gap-2">
+        <div class="flex items-center gap-1.5 sm:gap-2">
+          <!-- 📱 PWA 설치 버튼 (네이티브/안내) -->
+          <button v-if="showPwaInstallBtn" @click="triggerPwaInstall"
+                  class="px-2.5 py-1.5 text-xs sm:text-sm font-semibold rounded-lg bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 transition flex items-center gap-1 border border-emerald-200 dark:border-emerald-800 shadow-sm"
+                  title="📱 앱으로 설치하기">
+            <i class="fa-solid fa-mobile-screen-button"></i>
+            <span class="hidden sm:inline">앱 설치</span>
+          </button>
+
+          <!-- 🎲 플레이 보조 툴 -->
+          <button @click="openCompanionModal"
+                  class="px-2.5 py-1.5 text-xs sm:text-sm font-semibold rounded-lg bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition flex items-center gap-1.5 border border-indigo-200 dark:border-indigo-800 shadow-sm"
+                  title="점수 계산기 / 타이머 / 선 정하기">
+            <i class="fa-solid fa-toolbox text-indigo-500"></i>
+            <span class="hidden md:inline">플레이 툴</span>
+          </button>
+
+          <!-- 📊 대시보드 (Phase 2) -->
+          <button @click="openDashboardModal"
+                  class="px-2.5 py-1.5 text-xs sm:text-sm font-semibold rounded-lg bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 hover:bg-purple-100 dark:hover:bg-purple-900/50 transition flex items-center gap-1.5 border border-purple-200 dark:border-purple-800 shadow-sm"
+                  title="데이터 시각화 대시보드">
+            <i class="fa-solid fa-chart-pie text-purple-500"></i>
+            <span class="hidden md:inline">대시보드</span>
+          </button>
+
+          <!-- 🤖 AI 추천 (Phase 3) -->
+          <button @click="openAiModal"
+                  class="px-2.5 py-1.5 text-xs sm:text-sm font-semibold rounded-lg bg-sky-50 dark:bg-sky-950/40 text-sky-700 dark:text-sky-300 hover:bg-sky-100 dark:hover:bg-sky-900/50 transition flex items-center gap-1.5 border border-sky-200 dark:border-sky-800 shadow-sm"
+                  title="AI 자연어 추천">
+            <i class="fa-solid fa-robot text-sky-500"></i>
+            <span class="hidden md:inline">AI 추천</span>
+          </button>
+
           <!-- 오늘 뭐 하지? (랜덤 추천) -->
           <button @click="openRandomPicker" 
-                  class="px-3 py-2 text-sm font-medium rounded-lg bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/50 transition flex items-center gap-1.5 border border-amber-200 dark:border-amber-800 shadow-sm"
+                  class="px-2.5 py-1.5 text-xs sm:text-sm font-medium rounded-lg bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/50 transition flex items-center gap-1.5 border border-amber-200 dark:border-amber-800 shadow-sm"
                   title="현재 조건에 맞는 게임 랜덤 뽑기">
             <i class="fa-solid fa-shuffle"></i>
-            <span class="hidden md:inline">랜덤 추천</span>
+            <span class="hidden lg:inline">랜덤 추천</span>
           </button>
 
           <!-- 새로고침 -->
@@ -109,32 +149,73 @@
       <!-- Filter Section -->
       <section class="bg-white dark:bg-slate-800/80 rounded-2xl p-4 sm:p-5 border border-slate-200/80 dark:border-slate-700/80 shadow-sm space-y-4">
         
-        <!-- 1. Quick Player Filter Bar -->
-        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div class="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
-            <span class="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider whitespace-nowrap">
-              플레이 인원:
-            </span>
-            <div class="flex gap-1.5">
-              <button 
-                v-for="p in ['ALL', 1, 2, 3, 4, 5, 6, 7]" 
-                :key="p"
-                @click="selectedPlayerCount = p"
-                :class="selectedPlayerCount === p 
-                  ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-500/30 font-bold' 
-                  : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'"
-                class="px-3 py-1 text-xs rounded-lg transition whitespace-nowrap">
-                {{ p === 'ALL' ? '전체' : (p === 7 ? '7인+' : p + '인') }}
-              </button>
+        <!-- 1. Quick Player Filter Bar & Playtime Bar -->
+        <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+          <div class="flex flex-wrap items-center gap-3">
+            <!-- Player Count Quick Filter -->
+            <div class="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
+              <span class="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider whitespace-nowrap">
+                인원:
+              </span>
+              <div class="flex gap-1">
+                <button
+                  v-for="p in ['ALL', 1, 2, 3, 4, 5, 6, 7]"
+                  :key="p"
+                  @click="selectedPlayerCount = p"
+                  :class="selectedPlayerCount === p
+                    ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-500/30 font-bold'
+                    : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'"
+                  class="px-2.5 py-1 text-xs rounded-lg transition whitespace-nowrap">
+                  {{ p === 'ALL' ? '전체' : (p === 7 ? '7인+' : p + '인') }}
+                </button>
+              </div>
+            </div>
+
+            <!-- Playtime Quick Filter (1.3) -->
+            <div class="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0 scrollbar-none pl-0 lg:pl-3 border-t lg:border-t-0 lg:border-l border-slate-200 dark:border-slate-700 pt-2 lg:pt-0">
+              <span class="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider whitespace-nowrap">
+                시간:
+              </span>
+              <div class="flex gap-1">
+                <button
+                  v-for="timeOpt in [
+                    { key: 'ALL', label: '전체' },
+                    { key: 'Quick', label: '⚡ Quick (≤30분)' },
+                    { key: 'Mid', label: '☕ Mid (30~60분)' },
+                    { key: 'Heavy', label: '🔥 Heavy (2시간+)' }
+                  ]"
+                  :key="timeOpt.key"
+                  @click="selectedPlayTime = timeOpt.key"
+                  :class="selectedPlayTime === timeOpt.key
+                    ? 'bg-purple-600 text-white shadow-sm shadow-purple-500/30 font-bold'
+                    : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'"
+                  class="px-2.5 py-1 text-xs rounded-lg transition whitespace-nowrap">
+                  {{ timeOpt.label }}
+                </button>
+              </div>
             </div>
           </div>
 
-          <!-- View Mode Toggle & CSV Export -->
-          <div class="flex items-center gap-2 self-end sm:self-center">
+          <!-- View Mode Toggle & Actions -->
+          <div class="flex items-center gap-2 self-end lg:self-center">
+            <button @click="openBggImportModal"
+                    class="text-xs px-2.5 py-1.5 rounded-lg border border-purple-200 dark:border-purple-800 bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 hover:bg-purple-100 transition flex items-center gap-1.5"
+                    title="BGG 마이 컬렉션 가져오기">
+              <i class="fa-solid fa-cloud-arrow-down"></i>
+              BGG 연동
+            </button>
+
+            <button @click="openLineupModal"
+                    class="text-xs px-2.5 py-1.5 rounded-lg border border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 transition flex items-center gap-1.5"
+                    title="모임 맞춤 라인업 조율">
+              <i class="fa-solid fa-layer-group"></i>
+              맞춤 라인업
+            </button>
+
             <button @click="exportCSV" 
                     class="text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 transition flex items-center gap-1.5">
               <i class="fa-solid fa-file-csv text-emerald-600"></i>
-              CSV 내보내기
+              CSV
             </button>
             
             <div class="bg-slate-100 dark:bg-slate-700/60 p-0.5 rounded-lg flex items-center border border-slate-200 dark:border-slate-600">
@@ -154,11 +235,50 @@
           </div>
         </div>
 
-        <!-- 2. Search & Detailed Dropdown Filters -->
+        <!-- 2. Multi-tag System/Mechanism Multi-select Filter (1.3) -->
+        <div v-if="allSystems.length > 0" class="pt-2 border-t border-slate-100 dark:border-slate-700/50">
+          <div class="flex items-center justify-between mb-1.5">
+            <span class="text-xs font-semibold text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+              <i class="fa-solid fa-tags text-indigo-500"></i> 복합 메커니즘/태그 다중 선택:
+            </span>
+            <div class="flex items-center gap-2 text-xs">
+              <span class="text-slate-400">매칭 방식:</span>
+              <button @click="tagMatchMode = 'OR'"
+                      :class="tagMatchMode === 'OR' ? 'bg-indigo-600 text-white font-bold' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300'"
+                      class="px-2 py-0.5 rounded text-[11px] transition">
+                OR (하나라도)
+              </button>
+              <button @click="tagMatchMode = 'AND'"
+                      :class="tagMatchMode === 'AND' ? 'bg-indigo-600 text-white font-bold' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300'"
+                      class="px-2 py-0.5 rounded text-[11px] transition">
+                AND (모두)
+              </button>
+              <button v-if="selectedTags.length > 0" @click="selectedTags = []" class="text-rose-500 hover:underline text-[11px] ml-1">
+                태그 해제 ({{ selectedTags.length }})
+              </button>
+            </div>
+          </div>
+
+          <div class="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto p-1 bg-slate-50 dark:bg-slate-900/50 rounded-xl border border-slate-100 dark:border-slate-800">
+            <button
+              v-for="sys in allSystems"
+              :key="sys.name"
+              @click="toggleTag(sys.name)"
+              :class="selectedTags.includes(sys.name)
+                ? 'bg-indigo-600 text-white font-semibold shadow-xs'
+                : 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'"
+              class="px-2.5 py-1 text-[11px] rounded-lg transition flex items-center gap-1">
+              <span>{{ sys.name }}</span>
+              <span class="text-[9px] opacity-70">({{ sys.count }})</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- 3. Search & Detailed Dropdown Filters -->
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3 pt-2 border-t border-slate-100 dark:border-slate-700/50">
           
           <!-- Search Box (supports Korean Chosung!) -->
-          <div class="lg:col-span-4 relative">
+          <div class="lg:col-span-5 relative">
             <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-3 text-slate-400 text-sm"></i>
             <input 
               v-model="searchQuery" 
@@ -193,18 +313,8 @@
             </select>
           </div>
 
-          <!-- System Filter -->
-          <div class="lg:col-span-2">
-            <select v-model="selectedSystem" class="w-full py-2 px-3 text-sm bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400">
-              <option value="ALL">모든 시스템</option>
-              <option v-for="s in systemsList" :key="s.name" :value="s.name">
-                {{ s.name }} ({{ s.count }})
-              </option>
-            </select>
-          </div>
-
           <!-- Sort Order -->
-          <div class="lg:col-span-2">
+          <div class="lg:col-span-3">
             <select v-model="sortBy" class="w-full py-2 px-3 text-sm bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400">
               <option value="name_asc">이름순 (가나다)</option>
               <option value="name_desc">이름 역순 (하파타)</option>
@@ -223,6 +333,10 @@
               인원: {{ selectedPlayerCount === 7 ? '7인+' : selectedPlayerCount + '인' }}
               <button @click="selectedPlayerCount = 'ALL'"><i class="fa-solid fa-xmark text-[10px]"></i></button>
             </span>
+            <span v-if="selectedPlayTime !== 'ALL'" class="inline-flex items-center gap-1 bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 px-2 py-0.5 rounded-md">
+              시간: {{ selectedPlayTime }}
+              <button @click="selectedPlayTime = 'ALL'"><i class="fa-solid fa-xmark text-[10px]"></i></button>
+            </span>
             <span v-if="selectedDifficulty !== 'ALL'" class="inline-flex items-center gap-1 bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 px-2 py-0.5 rounded-md">
               난이도: {{ selectedDifficulty }}
               <button @click="selectedDifficulty = 'ALL'"><i class="fa-solid fa-xmark text-[10px]"></i></button>
@@ -231,14 +345,14 @@
               소유자: {{ selectedOwner }}
               <button @click="selectedOwner = 'ALL'"><i class="fa-solid fa-xmark text-[10px]"></i></button>
             </span>
-            <span v-if="selectedSystem !== 'ALL'" class="inline-flex items-center gap-1 bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 px-2 py-0.5 rounded-md">
-              시스템: {{ selectedSystem }}
-              <button @click="selectedSystem = 'ALL'"><i class="fa-solid fa-xmark text-[10px]"></i></button>
+            <span v-if="selectedTags.length > 0" class="inline-flex items-center gap-1 bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 px-2 py-0.5 rounded-md">
+              태그({{ tagMatchMode }}): {{ selectedTags.join(', ') }}
+              <button @click="selectedTags = []"><i class="fa-solid fa-xmark text-[10px]"></i></button>
             </span>
           </div>
 
-          <button v-if="searchQuery || selectedPlayerCount !== 'ALL' || selectedDifficulty !== 'ALL' || selectedOwner !== 'ALL' || selectedSystem !== 'ALL'"
-                  @click="searchQuery = ''; selectedPlayerCount = 'ALL'; selectedDifficulty = 'ALL'; selectedOwner = 'ALL'; selectedSystem = 'ALL'"
+          <button v-if="searchQuery || selectedPlayerCount !== 'ALL' || selectedPlayTime !== 'ALL' || selectedDifficulty !== 'ALL' || selectedOwner !== 'ALL' || selectedTags.length > 0"
+                  @click="resetAllFilters"
                   class="text-indigo-600 dark:text-indigo-400 hover:underline">
             필터 초기화
           </button>
@@ -282,9 +396,9 @@
         </div>
         <h3 class="text-base font-bold text-slate-700 dark:text-slate-200">조건에 맞는 게임을 찾을 수 없습니다</h3>
         <p class="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-sm mx-auto">
-          검색어나 선택된 필터(인원, 난이도, 소유자)를 조정해보세요.
+          검색어나 선택된 필터(인원, 시간, 난이도, 소유자, 태그)를 조정해보세요.
         </p>
-        <button @click="searchQuery = ''; selectedPlayerCount = 'ALL'; selectedDifficulty = 'ALL'; selectedOwner = 'ALL'; selectedSystem = 'ALL'"
+        <button @click="resetAllFilters"
                 class="mt-4 px-4 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition">
           모든 필터 초기화
         </button>
@@ -314,7 +428,7 @@
                 </span>
               </div>
 
-              <!-- Player count info -->
+              <!-- Player count & Playtime info -->
               <div class="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300 mb-3 flex-wrap">
                 <span class="inline-flex items-center gap-1 font-medium">
                   <i class="fa-solid fa-users text-slate-400"></i>
@@ -330,6 +444,12 @@
                   <template v-else>
                     인원 미정
                   </template>
+                </span>
+
+                <!-- Playtime display -->
+                <span v-if="getGamePlayTime(game)" class="inline-flex items-center gap-1 font-medium text-slate-500 dark:text-slate-400">
+                  <i class="fa-solid fa-clock text-slate-400"></i>
+                  {{ getGamePlayTime(game) }}분
                 </span>
 
                 <!-- Best Player Match Badge -->
@@ -391,6 +511,7 @@
               <tr>
                 <th class="py-3 px-4">게임명</th>
                 <th class="py-3 px-3">인원</th>
+                <th class="py-3 px-3">시간</th>
                 <th class="py-3 px-3">베스트인원</th>
                 <th class="py-3 px-3">난이도</th>
                 <th class="py-3 px-4">게임시스템</th>
@@ -415,6 +536,9 @@
                   <template v-else-if="game.maxPlayers">최대 {{ game.maxPlayers }}인</template>
                   <template v-else-if="game.minPlayers">최소 {{ game.minPlayers }}인</template>
                   <span v-else class="text-slate-400">-</span>
+                </td>
+                <td class="py-3 px-3 whitespace-nowrap text-slate-600 dark:text-slate-300">
+                  {{ getGamePlayTime(game) ? getGamePlayTime(game) + '분' : '-' }}
                 </td>
                 <td class="py-3 px-3 whitespace-nowrap">
                   <span v-if="game.bestPlayers" 
@@ -475,6 +599,367 @@
     </footer>
 
     <!-- ==================== MODALS ==================== -->
+
+    <!-- [Phase 1] 📱 PWA INSTALL GUIDE MODAL (iOS / Native) -->
+    <div v-if="isPwaModalOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+      <div class="bg-white dark:bg-slate-800 rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 dark:border-slate-700 space-y-4">
+        <div class="flex items-center justify-between border-b border-slate-100 dark:border-slate-700 pb-3">
+          <h3 class="font-bold text-slate-900 dark:text-white flex items-center gap-2">
+            <i class="fa-solid fa-mobile-screen text-indigo-500"></i> 앱으로 설치하기 안내
+          </h3>
+          <button @click="isPwaModalOpen = false" class="text-slate-400 hover:text-slate-600">
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </div>
+
+        <div v-if="deferredPwaPrompt" class="space-y-3 text-xs text-slate-600 dark:text-slate-300">
+          <p class="text-sm">클릭 한 번으로 홈 화면에 보드게임 매니저를 앱처럼 추가할 수 있습니다.</p>
+          <button @click="triggerPwaPromptAction" class="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-md transition flex items-center justify-center gap-2">
+            <i class="fa-solid fa-download"></i> 지금 홈 화면에 앱 설치하기
+          </button>
+        </div>
+
+        <div v-else class="space-y-3 text-xs text-slate-600 dark:text-slate-300">
+          <div class="p-3 bg-purple-50 dark:bg-purple-950/40 rounded-2xl border border-purple-200 dark:border-purple-800 space-y-2">
+            <p class="font-bold text-purple-900 dark:text-purple-200 flex items-center gap-1.5">
+              <i class="fa-brands fa-apple text-base"></i> iOS Safari 사용 방법:
+            </p>
+            <ol class="list-decimal list-inside space-y-1 text-[11px] text-purple-800 dark:text-purple-300">
+              <li>사파리 하단 중앙의 <strong>공유 아이콘 [ <i class="fa-solid fa-arrow-up-from-bracket"></i> ]</strong>을 누릅니다.</li>
+              <li>메뉴를 아래로 스크롤하여 <strong>[홈 화면에 추가 <i class="fa-regular fa-square-plus"></i>]</strong>를 선택합니다.</li>
+              <li>우측 상단 <strong>[추가]</strong>를 누르면 앱 아이콘이 즉시 생깁니다!</li>
+            </ol>
+          </div>
+
+          <div class="p-3 bg-emerald-50 dark:bg-emerald-950/40 rounded-2xl border border-emerald-200 dark:border-emerald-800 space-y-2">
+            <p class="font-bold text-emerald-900 dark:text-emerald-200 flex items-center gap-1.5">
+              <i class="fa-brands fa-android text-base"></i> Android Chrome / Edge 사용 방법:
+            </p>
+            <p class="text-[11px] text-emerald-800 dark:text-emerald-300">
+              우측 상단 메뉴 [ ⋮ ] ➔ <strong>[앱 설치]</strong> 또는 <strong>[홈 화면에 추가]</strong>를 누르세요.
+            </p>
+          </div>
+        </div>
+
+        <div class="pt-2 text-right">
+          <button @click="isPwaModalOpen = false" class="px-4 py-2 text-xs font-semibold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 rounded-xl">
+            확인
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- [Phase 1] 🎲 COMPANION TOOL MODAL (점수 계산기 / 타이머 / 선 정하기) -->
+    <div v-if="isCompanionModalOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm overflow-y-auto">
+      <div class="bg-white dark:bg-slate-800 rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 dark:border-slate-700 space-y-5 my-8">
+
+        <!-- Header & Tab navigation -->
+        <div class="flex items-center justify-between border-b border-slate-100 dark:border-slate-700 pb-3">
+          <h3 class="font-bold text-slate-900 dark:text-white flex items-center gap-2">
+            <i class="fa-solid fa-toolbox text-indigo-500"></i> 테이블탑 플레이 보조 툴
+          </h3>
+          <button @click="isCompanionModalOpen = false" class="text-slate-400 hover:text-slate-600">
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </div>
+
+        <div class="flex bg-slate-100 dark:bg-slate-900 p-1 rounded-2xl text-xs font-semibold">
+          <button @click="companionTab = 'score'"
+                  :class="companionTab === 'score' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-300 shadow-sm' : 'text-slate-500'"
+                  class="flex-1 py-2 rounded-xl transition">
+            🏆 점수 계산기
+          </button>
+          <button @click="companionTab = 'timer'"
+                  :class="companionTab === 'timer' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-300 shadow-sm' : 'text-slate-500'"
+                  class="flex-1 py-2 rounded-xl transition">
+            ⏱️ 플레이 타이머
+          </button>
+          <button @click="companionTab = 'firstPlayer'"
+                  :class="companionTab === 'firstPlayer' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-300 shadow-sm' : 'text-slate-500'"
+                  class="flex-1 py-2 rounded-xl transition">
+            🎲 선 결정 룰렛
+          </button>
+        </div>
+
+        <!-- Tab 1: Score Calculator -->
+        <div v-if="companionTab === 'score'" class="space-y-4 text-xs">
+          <div class="flex items-center justify-between">
+            <span class="font-bold text-slate-700 dark:text-slate-200">플레이어별 점수 입력</span>
+            <button @click="addScorePlayer" class="px-2.5 py-1 bg-indigo-50 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-300 font-semibold rounded-lg hover:bg-indigo-100">
+              + 플레이어 추가
+            </button>
+          </div>
+
+          <div class="space-y-2 max-h-60 overflow-y-auto pr-1">
+            <div v-for="(p, idx) in scorePlayers" :key="idx"
+                 :class="isWinnerPlayer(p) ? 'bg-amber-50 dark:bg-amber-950/50 border-amber-300 dark:border-amber-700' : 'bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-700'"
+                 class="p-3 rounded-2xl border flex items-center gap-3 transition">
+
+              <span v-if="isWinnerPlayer(p)" class="text-amber-500 text-base" title="승자!">
+                <i class="fa-solid fa-crown animate-bounce"></i>
+              </span>
+              <span v-else class="text-slate-400 font-bold w-4 text-center">{{ idx + 1 }}</span>
+
+              <input v-model="p.name" type="text" placeholder="이름" class="flex-1 px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none font-medium" />
+
+              <input v-model.number="p.score" type="number" placeholder="점수" class="w-20 px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none text-right font-bold" />
+
+              <button @click="removeScorePlayer(idx)" class="text-slate-400 hover:text-rose-500 p-1">
+                <i class="fa-solid fa-trash-can"></i>
+              </button>
+            </div>
+          </div>
+
+          <div v-if="winningPlayerName" class="p-3 bg-amber-100 dark:bg-amber-950/80 rounded-2xl border border-amber-300 dark:border-amber-700 text-center">
+            <p class="text-xs font-bold text-amber-900 dark:text-amber-200">
+              🎉 최고 득점 승자: <span class="text-sm text-indigo-600 dark:text-indigo-400 font-extrabold">{{ winningPlayerName }}</span>
+            </p>
+          </div>
+        </div>
+
+        <!-- Tab 2: Playtime Timer -->
+        <div v-if="companionTab === 'timer'" class="space-y-4 text-center py-4">
+          <div class="text-5xl font-mono font-black tracking-widest text-indigo-600 dark:text-indigo-400 bg-slate-50 dark:bg-slate-900 py-6 rounded-3xl border border-slate-200 dark:border-slate-700">
+            {{ formatTimer(timerSeconds) }}
+          </div>
+
+          <div class="flex items-center justify-center gap-3">
+            <button v-if="!isTimerRunning" @click="startTimer" class="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-2xl shadow-sm transition flex items-center gap-2">
+              <i class="fa-solid fa-play"></i> 시작
+            </button>
+            <button v-else @click="pauseTimer" class="px-6 py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-2xl shadow-sm transition flex items-center gap-2">
+              <i class="fa-solid fa-pause"></i> 일시정지
+            </button>
+            <button @click="resetTimer" class="px-4 py-2.5 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 font-semibold rounded-2xl transition">
+              리셋
+            </button>
+          </div>
+        </div>
+
+        <!-- Tab 3: First Player Roulette -->
+        <div v-if="companionTab === 'firstPlayer'" class="space-y-4 text-xs text-center">
+          <p class="text-slate-500 dark:text-slate-400">참여 플레이어 이름을 입력 후 무작위 선 플레이어를 결정하세요.</p>
+
+          <div class="flex gap-2">
+            <input v-model="fpNamesInput" type="text" placeholder="이름을 쉼표로 구분 (예: 명수, 인철, 현정, 구슬)"
+                   class="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none" />
+          </div>
+
+          <div class="p-6 bg-gradient-to-br from-indigo-50 to-purple-50 dark:from-indigo-950/40 dark:to-purple-950/40 rounded-3xl border border-indigo-100 dark:border-indigo-900">
+            <span class="text-xs font-bold text-indigo-500 uppercase tracking-wider block mb-1">🎯 선 플레이어</span>
+            <div class="text-2xl font-black text-slate-900 dark:text-white min-h-[2.25rem] flex items-center justify-center">
+              {{ fpPickedWinner ? fpPickedWinner : (isFpSpinning ? '두구두구...' : '버튼을 눌러주세요!') }}
+            </div>
+          </div>
+
+          <button @click="spinFirstPlayer" :disabled="isFpSpinning" class="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-md transition flex items-center justify-center gap-2">
+            <i class="fa-solid fa-dice" :class="{ 'fa-spin': isFpSpinning }"></i> 선 플레이어 뽑기!
+          </button>
+        </div>
+
+        <div class="pt-2 text-right border-t border-slate-100 dark:border-slate-700">
+          <button @click="isCompanionModalOpen = false" class="px-4 py-2 text-xs font-semibold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 rounded-xl">
+            닫기
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- [Phase 2] 📥 BGG MY COLLECTION IMPORT MODAL (2.1) -->
+    <div v-if="isBggImportModalOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+      <div class="bg-white dark:bg-slate-800 rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 dark:border-slate-700 space-y-4">
+        <div class="flex items-center justify-between border-b border-slate-100 dark:border-slate-700 pb-3">
+          <h3 class="font-bold text-slate-900 dark:text-white flex items-center gap-2">
+            <i class="fa-solid fa-cloud-arrow-down text-purple-600"></i> BGG 마이 컬렉션 가져오기
+          </h3>
+          <button @click="isBggImportModalOpen = false" class="text-slate-400 hover:text-slate-600">
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </div>
+
+        <p class="text-xs text-slate-600 dark:text-slate-300">
+          BGG 사용자 계정 ID를 입력하면 해당 사용자의 보유 보드게임 목록을 가져와 내 선반에 즉시 등록합니다.
+        </p>
+
+        <div class="space-y-3 text-xs">
+          <div>
+            <label class="block font-semibold text-slate-700 dark:text-slate-300 mb-1">BGG 계정 ID</label>
+            <input v-model="bggUsernameInput" type="text" placeholder="예: rahdo, tomvasel"
+                   class="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-purple-500" />
+          </div>
+
+          <div class="flex items-center gap-3">
+            <label class="inline-flex items-center gap-1.5 cursor-pointer">
+              <input v-model="bggImportOwn" type="checkbox" class="rounded text-purple-600 focus:ring-purple-500" />
+              <span>소유 목록 (Own)</span>
+            </label>
+            <label class="inline-flex items-center gap-1.5 cursor-pointer">
+              <input v-model="bggImportWish" type="checkbox" class="rounded text-purple-600 focus:ring-purple-500" />
+              <span>위시리스트 (Wishlist)</span>
+            </label>
+          </div>
+
+          <button @click="importBggUserCollection" :disabled="bggImportLoading"
+                  class="w-full py-2.5 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl shadow-md transition flex items-center justify-center gap-2">
+            <i v-if="bggImportLoading" class="fa-solid fa-spinner fa-spin"></i>
+            <span v-else>컬렉션 가져오기</span>
+          </button>
+        </div>
+
+        <div class="pt-2 text-right border-t border-slate-100 dark:border-slate-700">
+          <button @click="isBggImportModalOpen = false" class="px-4 py-2 text-xs font-semibold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 rounded-xl">
+            닫기
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- [Phase 2] 🎯 MEETUP LINEUP RECOMMENDATION MODAL (2.2) -->
+    <div v-if="isLineupModalOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm overflow-y-auto">
+      <div class="bg-white dark:bg-slate-800 rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 dark:border-slate-700 space-y-4 my-8">
+        <div class="flex items-center justify-between border-b border-slate-100 dark:border-slate-700 pb-3">
+          <h3 class="font-bold text-slate-900 dark:text-white flex items-center gap-2">
+            <i class="fa-solid fa-layer-group text-indigo-500"></i> 모임 맞춤 게임 조율 라인업
+          </h3>
+          <button @click="isLineupModalOpen = false" class="text-slate-400 hover:text-slate-600">
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </div>
+
+        <p class="text-xs text-slate-600 dark:text-slate-300">
+          오늘 모이는 인원과 총 모임 가능 시간을 입력하면 최적의 보드게임 조율 조합 패키지를 추천합니다.
+        </p>
+
+        <div class="grid grid-cols-2 gap-3 text-xs">
+          <div>
+            <label class="block font-semibold text-slate-700 dark:text-slate-300 mb-1">모임 인원 (명)</label>
+            <input v-model.number="lineupPlayers" type="number" min="1" max="20" class="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none" />
+          </div>
+          <div>
+            <label class="block font-semibold text-slate-700 dark:text-slate-300 mb-1">총 시간 (분)</label>
+            <input v-model.number="lineupTotalTime" type="number" min="30" step="30" class="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none" />
+          </div>
+        </div>
+
+        <!-- Recommendation Results -->
+        <div class="space-y-3 pt-2">
+          <span class="text-xs font-bold text-slate-700 dark:text-slate-200">추천 라인업 패키지 조합</span>
+
+          <div v-if="lineupPackages.length === 0" class="text-center py-6 text-xs text-slate-400 bg-slate-50 dark:bg-slate-900 rounded-2xl">
+            조건에 맞는 라인업 패키지를 계산 중이거나 부합하는 조합이 없습니다.
+          </div>
+
+          <div v-for="(pkg, idx) in lineupPackages" :key="idx" class="p-3 bg-slate-50 dark:bg-slate-900/60 rounded-2xl border border-slate-200 dark:border-slate-700/80 space-y-2">
+            <div class="flex items-center justify-between text-xs">
+              <span class="font-bold text-indigo-600 dark:text-indigo-400">옵션 {{ idx + 1 }}: {{ pkg.title }}</span>
+              <span class="text-slate-500">예상 소요: {{ pkg.totalEstimatedTime }}분</span>
+            </div>
+            <div class="flex flex-wrap gap-1.5">
+              <span v-for="g in pkg.games" :key="g.id" class="px-2 py-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-semibold text-slate-800 dark:text-slate-200">
+                🎮 {{ g.name }} ({{ getGamePlayTime(g) || 45 }}분)
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div class="pt-2 text-right border-t border-slate-100 dark:border-slate-700">
+          <button @click="isLineupModalOpen = false" class="px-4 py-2 text-xs font-semibold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 rounded-xl">
+            닫기
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- [Phase 2] 📊 VISUAL DASHBOARD MODAL (2.3 Chart.js) -->
+    <div v-if="isDashboardModalOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm overflow-y-auto">
+      <div class="bg-white dark:bg-slate-800 rounded-3xl max-w-2xl w-full p-6 shadow-2xl border border-slate-200 dark:border-slate-700 space-y-5 my-8">
+        <div class="flex items-center justify-between border-b border-slate-100 dark:border-slate-700 pb-3">
+          <h3 class="font-bold text-slate-900 dark:text-white flex items-center gap-2">
+            <i class="fa-solid fa-chart-pie text-purple-500"></i> 컬렉션 시각화 대시보드
+          </h3>
+          <button @click="isDashboardModalOpen = false" class="text-slate-400 hover:text-slate-600">
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div class="bg-slate-50 dark:bg-slate-900/60 p-4 rounded-2xl border border-slate-100 dark:border-slate-800 flex flex-col items-center">
+            <h4 class="text-xs font-bold text-slate-700 dark:text-slate-300 mb-3">🎯 난이도별 게임 비율</h4>
+            <div class="w-full h-48 relative flex items-center justify-center">
+              <canvas id="diffChartCanvas"></canvas>
+            </div>
+          </div>
+
+          <div class="bg-slate-50 dark:bg-slate-900/60 p-4 rounded-2xl border border-slate-100 dark:border-slate-800 flex flex-col items-center">
+            <h4 class="text-xs font-bold text-slate-700 dark:text-slate-300 mb-3">🧩 주요 메커니즘 Top 5</h4>
+            <div class="w-full h-48 relative flex items-center justify-center">
+              <canvas id="systemChartCanvas"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <div class="pt-2 text-right border-t border-slate-100 dark:border-slate-700">
+          <button @click="isDashboardModalOpen = false" class="px-4 py-2 text-xs font-semibold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 rounded-xl">
+            닫기
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- [Phase 3] 🤖 AI RECOMMENDATION ENGINE MODAL (3.2) -->
+    <div v-if="isAiModalOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm overflow-y-auto">
+      <div class="bg-white dark:bg-slate-800 rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 dark:border-slate-700 space-y-4 my-8">
+        <div class="flex items-center justify-between border-b border-slate-100 dark:border-slate-700 pb-3">
+          <h3 class="font-bold text-slate-900 dark:text-white flex items-center gap-2">
+            <i class="fa-solid fa-robot text-sky-500"></i> AI 스마트 보드게임 추천
+          </h3>
+          <button @click="isAiModalOpen = false" class="text-slate-400 hover:text-slate-600">
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </div>
+
+        <p class="text-xs text-slate-600 dark:text-slate-300">
+          모임 상황이나 원하는 취향을 자연어로 자유롭게 입력해보세요!
+        </p>
+
+        <div class="space-y-2">
+          <textarea v-model="aiPromptInput" rows="3" placeholder="예: 입문자 2명과 헤비게이머 1명이 즐길 덱빌딩이나 일꾼놓기 게임 추천해줘"
+                    class="w-full p-3 text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl outline-none focus:ring-2 focus:ring-sky-500"></textarea>
+
+          <button @click="runAiRecommendation" :disabled="isAiThinking" class="w-full py-2.5 bg-sky-600 hover:bg-sky-700 text-white font-bold rounded-xl shadow-md transition text-xs flex items-center justify-center gap-2">
+            <i v-if="isAiThinking" class="fa-solid fa-spinner fa-spin"></i>
+            <span v-else><i class="fa-solid fa-wand-magic-sparkles mr-1"></i> AI 분석 & 매칭 게임 추천</span>
+          </button>
+        </div>
+
+        <!-- AI Recommendation Results -->
+        <div v-if="aiRecommendations.length > 0" class="space-y-3 pt-2">
+          <span class="text-xs font-bold text-slate-700 dark:text-slate-200">🤖 AI가 선반에서 엄선한 추천 3선</span>
+
+          <div v-for="(rec, idx) in aiRecommendations" :key="idx"
+               @click="isAiModalOpen = false; openDetailModal(rec.game)"
+               class="p-3 bg-gradient-to-r from-sky-50 to-indigo-50 dark:from-sky-950/40 dark:to-indigo-950/40 rounded-2xl border border-sky-200/80 dark:border-sky-800/60 cursor-pointer hover:shadow-md transition space-y-1">
+            <div class="flex items-center justify-between">
+              <h4 class="font-bold text-sky-900 dark:text-sky-200 text-sm">
+                {{ idx + 1 }}. {{ rec.game.name }}
+              </h4>
+              <span class="text-[10px] px-2 py-0.5 rounded-full bg-sky-200 dark:bg-sky-900 text-sky-800 dark:text-sky-200 font-bold">
+                적합도 {{ rec.score }}%
+              </span>
+            </div>
+            <p class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+              💡 <strong>추천 사유:</strong> {{ rec.reason }}
+            </p>
+          </div>
+        </div>
+
+        <div class="pt-2 text-right border-t border-slate-100 dark:border-slate-700">
+          <button @click="isAiModalOpen = false" class="px-4 py-2 text-xs font-semibold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 rounded-xl">
+            닫기
+          </button>
+        </div>
+      </div>
+    </div>
 
     <!-- 1. GAME DETAIL MODAL -->
     <div v-if="isDetailModalOpen && activeGame" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
@@ -904,10 +1389,21 @@
 
   </div>
 
+  <!-- Service Worker Registration -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js')
+          .then(reg => console.log('ServiceWorker registered:', reg.scope))
+          .catch(err => console.log('ServiceWorker registration failed:', err));
+      });
+    }
+  </script>
+
   <!-- Scripts -->
   <script src="initial-data.js"></script>
   <script src="sheets-service.js"></script>
   <script src="bgg-service.js"></script>
-  <script src="app.js"></script>
+  <script type="module" src="app.js"></script>
 </body>
 </html>

@@ -1,0 +1,18 @@
+{
+  "name": "보드게임 컬렉션 매니저",
+  "short_name": "보드게임 매니저",
+  "description": "구글 시트 & BGG 연동 보드게임 컬렉션 및 플레이 보조 툴",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#7c3aed",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%237c3aed'/><text x='50' y='68' font-size='55' text-anchor='middle' fill='white'>🎲</text></svg>",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

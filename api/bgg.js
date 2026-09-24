@@ -10,15 +10,17 @@ export default async function handler(req, res) {
     return res.status(200).end();
   }
 
-  const { endpoint, query, id } = req.query;
+  const { endpoint, query, id, username } = req.query;
   let targetUrl = '';
 
   if (endpoint === 'search' && query) {
     targetUrl = `https://boardgamegeek.com/xmlapi2/search?query=${encodeURIComponent(query)}&type=boardgame`;
   } else if (endpoint === 'thing' && id) {
     targetUrl = `https://boardgamegeek.com/xmlapi2/thing?id=${id}&stats=1`;
+  } else if (endpoint === 'collection' && username) {
+    targetUrl = `https://boardgamegeek.com/xmlapi2/collection?username=${encodeURIComponent(username)}&stats=1`;
   } else {
-    return res.status(400).json({ error: 'Invalid parameters. Use endpoint=search&query=... or endpoint=thing&id=...' });
+    return res.status(400).json({ error: 'Invalid parameters.' });
   }
 
   try {

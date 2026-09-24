@@ -1,8 +1,12 @@
 /**
- * App.js: 메인 Vue 3 애플리케이션
+ * App.js: 메인 Vue 3 애플리케이션 (PWA, 컴패니언 툴, 다중 태그/시간 필터, BGG 연동, 대시보드, AI 모듈 연동)
  */
 
-const { createApp, ref, computed, onMounted, watch } = Vue;
+import { setupCompanionTool } from './components/companion.js';
+import { setupDashboard } from './components/dashboard.js';
+import { recommendGamesByAiPrompt } from './services/ai.js';
+
+const { createApp, ref, computed, onMounted, watch, nextTick } = Vue;
 
 const CHOSUNG = ["ㄱ","ㄲ","ㄴ","ㄷ","ㄸ","ㄹ","ㅁ","ㅂ","ㅃ","ㅅ","ㅆ","ㅇ","ㅈ","ㅉ","ㅊ","ㅋ","ㅌ","ㅍ","ㅎ"];
 function getChosung(str) {
@@ -28,26 +32,48 @@ const DIFFICULTY_ORDER = {
   '상': 5
 };
 
+function parseGamePlayTime(game) {
+  if (!game) return null;
+  const text = `${game.notes || ''} ${game.system || ''}`;
+  const match = text.match(/(?:플레이시간:?|시간:?|\b)(\d+)\s*분/);
+  if (match) {
+    return parseInt(match[1], 10);
+  }
+  const diff = (game.difficulty || '').trim();
+  if (diff === '입문') return 20;
+  if (diff === '하' || diff === '초급') return 30;
+  if (diff === '중하') return 45;
+  if (diff === '중') return 75;
+  if (diff === '상') return 120;
+  return 45;
+}
+
 createApp({
   setup() {
     const sheetsService = new SheetsService();
     const bggService = new BGGService(sheetsService);
 
-    // 상태
+    // 기본 상태
     const games = ref([]);
     const loading = ref(true);
     const refreshing = ref(false);
     const error = ref(null);
     const darkMode = ref(localStorage.getItem('bg_dark_mode') === 'true');
 
+    // PWA 상태
+    const deferredPwaPrompt = ref(null);
+    const isPwaModalOpen = ref(false);
+
     // 필터 및 정렬
     const searchQuery = ref('');
-    const selectedPlayerCount = ref('ALL'); // 'ALL', 1, 2, 3, 4, 5, 6, 7
-    const selectedDifficulty = ref('ALL'); // 'ALL', '입문', '하', '중하', '중', '상'
+    const selectedPlayerCount = ref('ALL');
+    const selectedPlayTime = ref('ALL');
+    const selectedDifficulty = ref('ALL');
     const selectedOwner = ref('ALL');
-    const selectedSystem = ref('ALL');
-    const sortBy = ref('name_asc'); // 'name_asc', 'name_desc', 'diff_asc', 'diff_desc', 'player_asc'
-    const viewMode = ref(localStorage.getItem('bg_view_mode') || 'card'); // 'card' or 'table'
+    const selectedTags = ref([]);
+    const tagMatchMode = ref('OR');
+    const sortBy = ref('name_asc');
+    const viewMode = ref(localStorage.getItem('bg_view_mode') || 'card');
 
     // 페이지네이션
     const currentPage = ref(1);
@@ -58,7 +84,7 @@ createApp({
     const activeGame = ref(null);
 
     const isEditModalOpen = ref(false);
-    const isEditing = ref(false); // true: 수정, false: 신규 등록
+    const isEditing = ref(false);
     const editForm = ref({
       id: '',
       rowIndex: null,
@@ -72,7 +98,7 @@ createApp({
       owner: ''
     });
 
-    // BGG 검색 모달
+    // BGG 단일 검색 모달
     const isBggModalOpen = ref(false);
     const bggQuery = ref('');
     const bggLoading = ref(false);
@@ -87,7 +113,7 @@ createApp({
       bggToken: ''
     });
 
-    // 랜덤 추천 모달 ("오늘 뭐 하지?")
+    // 랜덤 추천 모달
     const isRandomModalOpen = ref(false);
     const randomPickedGame = ref(null);
     const isSpinning = ref(false);
@@ -99,6 +125,148 @@ createApp({
       setTimeout(() => {
         toast.value.show = false;
       }, 3000);
+    };
+
+    // [Phase 1 Component] 🎲 플레이 보조 툴 (Companion Component)
+    const companionLogic = setupCompanionTool(ref, computed);
+
+    // [Phase 2 Component] 📊 시각화 대시보드 (Dashboard Component)
+    const dashboardLogic = setupDashboard(ref, nextTick, games);
+
+    // [Phase 2] 📥 BGG 마이 컬렉션 연동 (2.1)
+    const isBggImportModalOpen = ref(false);
+    const bggUsernameInput = ref('');
+    const bggImportOwn = ref(true);
+    const bggImportWish = ref(false);
+    const bggImportLoading = ref(false);
+
+    const openBggImportModal = () => {
+      isBggImportModalOpen.value = true;
+    };
+
+    const importBggUserCollection = async () => {
+      if (!bggUsernameInput.value.trim()) {
+        showToast('BGG 계정 ID를 입력하세요.', 'error');
+        return;
+      }
+      bggImportLoading.value = true;
+      try {
+        const username = bggUsernameInput.value.trim();
+        let fetchedGames = [];
+
+        if (bggImportOwn.value) {
+          const ownGames = await bggService.getUserCollection(username, 'own');
+          fetchedGames.push(...ownGames);
+        }
+        if (bggImportWish.value) {
+          const wishGames = await bggService.getUserCollection(username, 'wishlist');
+          fetchedGames.push(...wishGames);
+        }
+
+        if (fetchedGames.length === 0) {
+          showToast('불러올 BGG 컬렉션 게임이 없습니다.', 'info');
+        } else {
+          for (const g of fetchedGames) {
+            await sheetsService.addGame(g);
+          }
+          await loadData(false);
+          showToast(`BGG에서 ${fetchedGames.length}개 게임을 내 선반에 추가했습니다!`, 'success');
+          isBggImportModalOpen.value = false;
+        }
+      } catch (err) {
+        showToast(`BGG 컬렉션 가져오기 실패: ${err.message}`, 'error');
+      } finally {
+        bggImportLoading.value = false;
+      }
+    };
+
+    // [Phase 2] 🎯 모임 맞춤 라인업 조율 (2.2)
+    const isLineupModalOpen = ref(false);
+    const lineupPlayers = ref(4);
+    const lineupTotalTime = ref(180);
+
+    const openLineupModal = () => {
+      isLineupModalOpen.value = true;
+    };
+
+    const lineupPackages = computed(() => {
+      const players = lineupPlayers.value || 4;
+      const targetTime = lineupTotalTime.value || 180;
+
+      const matchedGames = games.value.filter(g => {
+        const min = g.minPlayers;
+        const max = g.maxPlayers;
+        if (min !== null && players < min) return false;
+        if (max !== null && players > max) return false;
+        return true;
+      });
+
+      if (matchedGames.length === 0) return [];
+
+      const list1 = [...matchedGames].sort(() => 0.5 - Math.random());
+      const pkg1 = [];
+      let timeAcc1 = 0;
+      for (const g of list1) {
+        const t = parseGamePlayTime(g) || 45;
+        if (timeAcc1 + t <= targetTime + 30) {
+          pkg1.push(g);
+          timeAcc1 += t;
+        }
+        if (pkg1.length >= 3 || timeAcc1 >= targetTime - 20) break;
+      }
+
+      const list2 = [...matchedGames].sort(() => 0.5 - Math.random());
+      const pkg2 = [];
+      let timeAcc2 = 0;
+      for (const g of list2) {
+        const t = parseGamePlayTime(g) || 45;
+        if (timeAcc2 + t <= targetTime + 30 && !pkg1.some(p => p.id === g.id)) {
+          pkg2.push(g);
+          timeAcc2 += t;
+        }
+        if (pkg2.length >= 3 || timeAcc2 >= targetTime - 20) break;
+      }
+
+      const packages = [];
+      if (pkg1.length > 0) {
+        packages.push({
+          title: '알찬 몰입형 조합',
+          games: pkg1,
+          totalEstimatedTime: timeAcc1
+        });
+      }
+      if (pkg2.length > 0) {
+        packages.push({
+          title: '다채로운 파티 & 메인 조합',
+          games: pkg2,
+          totalEstimatedTime: timeAcc2
+        });
+      }
+      return packages;
+    });
+
+    // [Phase 3 Service] 🤖 AI 추천 엔진
+    const isAiModalOpen = ref(false);
+    const aiPromptInput = ref('');
+    const isAiThinking = ref(false);
+    const aiRecommendations = ref([]);
+
+    const openAiModal = () => {
+      isAiModalOpen.value = true;
+    };
+
+    const runAiRecommendation = () => {
+      if (!aiPromptInput.value.trim()) {
+        showToast('원하는 모임 상황이나 조건을 입력해주세요.', 'error');
+        return;
+      }
+      isAiThinking.value = true;
+      aiRecommendations.value = [];
+
+      setTimeout(() => {
+        aiRecommendations.value = recommendGamesByAiPrompt(aiPromptInput.value, games.value);
+        isAiThinking.value = false;
+      }, 500);
     };
 
     // 다크모드 토글
@@ -116,6 +284,32 @@ createApp({
     const setViewMode = (mode) => {
       viewMode.value = mode;
       localStorage.setItem('bg_view_mode', mode);
+    };
+
+    // PWA 설치 버튼
+    const showPwaInstallBtn = computed(() => {
+      const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
+      return !isStandalone;
+    });
+
+    const triggerPwaInstall = () => {
+      if (deferredPwaPrompt.value) {
+        deferredPwaPrompt.value.prompt();
+        deferredPwaPrompt.value.userChoice.then((choiceResult) => {
+          if (choiceResult.outcome === 'accepted') {
+            showToast('보드게임 매니저 앱이 설치되었습니다!', 'success');
+          }
+          deferredPwaPrompt.value = null;
+        });
+      } else {
+        isPwaModalOpen.value = true;
+      }
+    };
+
+    const triggerPwaPromptAction = () => {
+      if (deferredPwaPrompt.value) {
+        triggerPwaInstall();
+      }
     };
 
     // 데이터 로드
@@ -139,7 +333,7 @@ createApp({
       }
     };
 
-    // 소유자 목록 추출 (가장 많은 소유자 순)
+    // 소유자 목록
     const ownersList = computed(() => {
       const counts = {};
       games.value.forEach(g => {
@@ -154,8 +348,8 @@ createApp({
         .map(([name, count]) => ({ name, count }));
     });
 
-    // 시스템 목록 추출 (자주 등장하는 순)
-    const systemsList = computed(() => {
+    // 전체 시스템/메커니즘 태그 목록
+    const allSystems = computed(() => {
       const counts = {};
       games.value.forEach(g => {
         if (!g.system) return;
@@ -165,16 +359,36 @@ createApp({
         });
       });
       return Object.entries(counts)
-        .filter(([_, count]) => count >= 2)
         .sort((a, b) => b[1] - a[1])
         .map(([name, count]) => ({ name, count }));
     });
+
+    const toggleTag = (tagName) => {
+      const idx = selectedTags.value.indexOf(tagName);
+      if (idx >= 0) {
+        selectedTags.value.splice(idx, 1);
+      } else {
+        selectedTags.value.push(tagName);
+      }
+    };
+
+    const resetAllFilters = () => {
+      searchQuery.value = '';
+      selectedPlayerCount.value = 'ALL';
+      selectedPlayTime.value = 'ALL';
+      selectedDifficulty.value = 'ALL';
+      selectedOwner.value = 'ALL';
+      selectedTags.value = [];
+    };
+
+    const getGamePlayTime = (game) => {
+      return parseGamePlayTime(game);
+    };
 
     // 필터링 및 정렬된 게임 목록
     const filteredGames = computed(() => {
       let result = [...games.value];
 
-      // 1. 검색어 필터 (게임명, 초성, 시스템, 비고, 소유자)
       if (searchQuery.value.trim()) {
         const q = searchQuery.value.trim().toLowerCase();
         const isQueryChosung = /^[ㄱ-ㅎ]+$/.test(q);
@@ -185,7 +399,6 @@ createApp({
           const notes = (g.notes || '').toLowerCase();
           const owner = (g.owner || '').toLowerCase();
 
-          // 초성 검색
           if (isQueryChosung) {
             const chosung = getChosung(g.name);
             if (chosung.includes(q)) return true;
@@ -195,20 +408,29 @@ createApp({
         });
       }
 
-      // 2. 인원수 필터
       if (selectedPlayerCount.value !== 'ALL') {
         const count = parseInt(selectedPlayerCount.value, 10);
         result = result.filter(g => {
           const min = g.minPlayers;
           const max = g.maxPlayers;
-          if (min === null && max === null) return true; // 인원 미기재 게임은 표시
+          if (min === null && max === null) return true;
           if (min !== null && count < min) return false;
           if (max !== null && count > max) return false;
           return true;
         });
       }
 
-      // 3. 난이도 필터
+      if (selectedPlayTime.value !== 'ALL') {
+        result = result.filter(g => {
+          const t = parseGamePlayTime(g);
+          if (!t) return true;
+          if (selectedPlayTime.value === 'Quick') return t <= 30;
+          if (selectedPlayTime.value === 'Mid') return t > 30 && t <= 60;
+          if (selectedPlayTime.value === 'Heavy') return t >= 120;
+          return true;
+        });
+      }
+
       if (selectedDifficulty.value !== 'ALL') {
         result = result.filter(g => {
           const diff = (g.difficulty || '').trim();
@@ -219,17 +441,21 @@ createApp({
         });
       }
 
-      // 4. 소유자 필터
       if (selectedOwner.value !== 'ALL') {
         result = result.filter(g => (g.owner || '').includes(selectedOwner.value));
       }
 
-      // 5. 시스템 필터
-      if (selectedSystem.value !== 'ALL') {
-        result = result.filter(g => (g.system || '').includes(selectedSystem.value));
+      if (selectedTags.value.length > 0) {
+        result = result.filter(g => {
+          const gameSys = (g.system || '').toLowerCase();
+          if (tagMatchMode.value === 'AND') {
+            return selectedTags.value.every(tag => gameSys.includes(tag.toLowerCase()));
+          } else {
+            return selectedTags.value.some(tag => gameSys.includes(tag.toLowerCase()));
+          }
+        });
       }
 
-      // 6. 정렬
       result.sort((a, b) => {
         if (sortBy.value === 'name_asc') {
           return a.name.localeCompare(b.name, 'ko');
@@ -252,7 +478,6 @@ createApp({
       return result;
     });
 
-    // 페이지네이션 적용된 게임 목록
     const paginatedGames = computed(() => {
       const start = 0;
       const end = currentPage.value * pageSize.value;
@@ -267,12 +492,10 @@ createApp({
       currentPage.value++;
     };
 
-    // 필터 변경 시 페이지 리셋
-    watch([searchQuery, selectedPlayerCount, selectedDifficulty, selectedOwner, selectedSystem, sortBy], () => {
+    watch([searchQuery, selectedPlayerCount, selectedPlayTime, selectedDifficulty, selectedOwner, selectedTags, tagMatchMode, sortBy], () => {
       currentPage.value = 1;
     });
 
-    // 베스트 인원 매칭 여부 검사
     const isBestPlayerMatch = (game, targetCount) => {
       if (!game.bestPlayers || targetCount === 'ALL') return false;
       const best = game.bestPlayers.toString();
@@ -280,13 +503,11 @@ createApp({
       return best.includes(countStr);
     };
 
-    // 상세 모달 열기
     const openDetailModal = (game) => {
       activeGame.value = game;
       isDetailModalOpen.value = true;
     };
 
-    // 추가 모달 열기
     const openAddModal = () => {
       isEditing.value = false;
       editForm.value = {
@@ -304,7 +525,6 @@ createApp({
       isEditModalOpen.value = true;
     };
 
-    // 수정 모달 열기
     const openEditModal = (game) => {
       isEditing.value = true;
       editForm.value = {
@@ -323,7 +543,6 @@ createApp({
       isEditModalOpen.value = true;
     };
 
-    // 게임 저장 (신규 또는 수정)
     const saveGame = async () => {
       if (!editForm.value.name.trim()) {
         showToast('게임명을 입력해주세요.', 'error');
@@ -345,7 +564,6 @@ createApp({
       }
     };
 
-    // 게임 삭제
     const deleteGame = async (game) => {
       if (!confirm(`'${game.name}' 게임을 정말 삭제하시겠습니까?`)) return;
 
@@ -359,7 +577,6 @@ createApp({
       }
     };
 
-    // BGG 검색 열기
     const openBggSearch = () => {
       bggQuery.value = editForm.value.name || '';
       bggResults.value = [];
@@ -370,7 +587,6 @@ createApp({
       }
     };
 
-    // BGG 검색 실행
     const searchBgg = async () => {
       if (!bggQuery.value.trim()) return;
       bggLoading.value = true;
@@ -388,14 +604,12 @@ createApp({
       }
     };
 
-    // BGG 상세 정보 조회 및 폼 자동 반영
     const selectBggGame = async (bggId) => {
       bggLoading.value = true;
       try {
         const detail = await bggService.getGameDetails(bggId);
         bggSelectedDetail.value = detail;
 
-        // 폼에 자동 반영
         if (detail.name) editForm.value.name = detail.name;
         if (detail.minPlayers) editForm.value.minPlayers = detail.minPlayers;
         if (detail.maxPlayers) editForm.value.maxPlayers = detail.maxPlayers;
@@ -426,7 +640,6 @@ createApp({
       }
     };
 
-    // 설정 열기
     const openSettingsModal = () => {
       const current = sheetsService.settings;
       settingsForm.value = {
@@ -437,7 +650,6 @@ createApp({
       isSettingsModalOpen.value = true;
     };
 
-    // 설정 저장
     const saveSettings = () => {
       sheetsService.saveSettings(settingsForm.value);
       showToast('설정이 저장되었습니다.', 'success');
@@ -445,7 +657,6 @@ createApp({
       loadData(true);
     };
 
-    // CSV 다운로드
     const exportCSV = () => {
       const csvData = sheetsService.exportToCSV(games.value);
       const blob = new Blob([csvData], { type: 'text/csv;charset=utf-8;' });
@@ -459,7 +670,6 @@ createApp({
       showToast('CSV 파일이 다운로드되었습니다.', 'success');
     };
 
-    // CSV 파일 직접 업로드 동기화
     const handleCsvUpload = (e) => {
       const file = e.target.files[0];
       if (!file) return;
@@ -477,10 +687,9 @@ createApp({
         }
       };
       reader.readAsText(file);
-      e.target.value = ''; // 초기화
+      e.target.value = '';
     };
 
-    // 로컬 변경사항 초기화
     const resetLocalData = () => {
       if (!confirm('로컬에 임시 저장된 변경 사항을 모두 삭제하고 초기 원본으로 되돌릴까요?')) return;
       sheetsService.clearLocalChanges();
@@ -489,7 +698,6 @@ createApp({
       isSettingsModalOpen.value = false;
     };
 
-    // 랜덤 게임 추천 ("오늘 뭐 하지?")
     const openRandomPicker = () => {
       if (filteredGames.value.length === 0) {
         showToast('조건에 맞는 게임이 없습니다.', 'error');
@@ -518,6 +726,12 @@ createApp({
       if (darkMode.value) {
         document.documentElement.classList.add('dark');
       }
+
+      window.addEventListener('beforeinstallprompt', (e) => {
+        e.preventDefault();
+        deferredPwaPrompt.value = e;
+      });
+
       loadData();
     });
 
@@ -528,16 +742,26 @@ createApp({
       error,
       darkMode,
       toggleDarkMode,
+      showPwaInstallBtn,
+      deferredPwaPrompt,
+      isPwaModalOpen,
+      triggerPwaInstall,
+      triggerPwaPromptAction,
       searchQuery,
       selectedPlayerCount,
+      selectedPlayTime,
       selectedDifficulty,
       selectedOwner,
-      selectedSystem,
+      selectedTags,
+      tagMatchMode,
       sortBy,
       viewMode,
       setViewMode,
       ownersList,
-      systemsList,
+      allSystems,
+      toggleTag,
+      resetAllFilters,
+      getGamePlayTime,
       filteredGames,
       paginatedGames,
       hasMoreGames,
@@ -573,6 +797,31 @@ createApp({
       isSpinning,
       openRandomPicker,
       spinRandomGame,
+      // Companion component logic
+      ...companionLogic,
+      // Dashboard component logic
+      ...dashboardLogic,
+      // BGG Import
+      isBggImportModalOpen,
+      bggUsernameInput,
+      bggImportOwn,
+      bggImportWish,
+      bggImportLoading,
+      openBggImportModal,
+      importBggUserCollection,
+      // Lineup
+      isLineupModalOpen,
+      lineupPlayers,
+      lineupTotalTime,
+      openLineupModal,
+      lineupPackages,
+      // AI
+      isAiModalOpen,
+      aiPromptInput,
+      isAiThinking,
+      aiRecommendations,
+      openAiModal,
+      runAiRecommendation,
       toast
     };
   }

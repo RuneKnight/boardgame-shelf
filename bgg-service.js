@@ -1,6 +1,6 @@
 /**
  * BGGService: BoardGameGeek XMLAPI2 연동 모듈
- * 게임명 검색 및 상세 정보(인원수, 베스트 인원, 긱 난이도/웨이트, 시스템, 썸네일) 파싱
+ * 게임명 검색, 상세 정보 및 사용자 계정 컬렉션(Collection/Wishlist) 파싱
  */
 
 class BGGService {
@@ -72,10 +72,12 @@ class BGGService {
       } else if (url.includes('/thing?id=')) {
         const idMatch = url.match(/id=([^&]+)/);
         if (idMatch) vercelUrl = `/api/bgg?endpoint=thing&id=${idMatch[1]}`;
+      } else if (url.includes('/collection?username=')) {
+        const uMatch = url.match(/username=([^&]+)/);
+        if (uMatch) vercelUrl = `/api/bgg?endpoint=collection&username=${uMatch[1]}`;
       }
     }
 
-    // 1차: Vercel 서버리스 프록시, 2차: allorigins, 3차: corsproxy, 4차: 직접 호출
     const proxyUrls = [
       vercelUrl,
       `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
@@ -87,7 +89,7 @@ class BGGService {
     for (const fetchUrl of proxyUrls) {
       try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 8000); // 8초 타임아웃
+        const timeoutId = setTimeout(() => controller.abort(), 8000);
 
         const resp = await fetch(fetchUrl, {
           headers: fetchUrl === url ? headers : {},
@@ -98,7 +100,6 @@ class BGGService {
         if (!resp.ok) continue;
         const text = await resp.text();
         
-        // 유효한 XML인지 검사
         if (text && text.includes('<') && (text.includes('<items') || text.includes('<item') || text.includes('<thing'))) {
           return this.parser.parseFromString(text, "text/xml");
         }
@@ -112,8 +113,6 @@ class BGGService {
 
   /**
    * 1. 게임명 검색 (Search)
-   * @param {string} query 검색어 (예: "Catan", "카탄", "Terraforming Mars")
-   * @returns {Promise<Array>} 검색 결과 목록 [{ id, name, year }]
    */
   async searchGames(query) {
     if (!query || !query.trim()) return [];
@@ -136,12 +135,11 @@ class BGGService {
       });
     });
 
-    return results.slice(0, 15); // 상위 15개
+    return results.slice(0, 15);
   }
 
   /**
-   * 2. 게임 상세 정보 조회 및 시트 규격에 맞게 변환 (Thing Detail)
-   * @param {string} bggId BGG 게임 ID
+   * 2. 게임 상세 정보 조회 (Thing Detail)
    */
   async getGameDetails(bggId) {
     const url = `https://boardgamegeek.com/xmlapi2/thing?id=${bggId}&stats=1`;
@@ -150,11 +148,9 @@ class BGGService {
     const item = xmlDoc.querySelector('item');
     if (!item) throw new Error("게임 상세 정보를 찾을 수 없습니다.");
 
-    // 게임명 (Primary)
     const primaryNameEl = item.querySelector('name[type="primary"]');
     const primaryName = primaryNameEl ? primaryNameEl.getAttribute('value') : '';
 
-    // 한글 또는 기타 대체 이름 확인
     let koreanName = '';
     const alternateNames = item.querySelectorAll('name[type="alternate"]');
     for (const alt of alternateNames) {
@@ -165,36 +161,29 @@ class BGGService {
       }
     }
 
-    // 이미지 및 썸네일
     const thumbnailEl = item.querySelector('thumbnail');
     const imageEl = item.querySelector('image');
     const thumbnail = thumbnailEl ? thumbnailEl.textContent : '';
     const image = imageEl ? imageEl.textContent : '';
 
-    // 인원수
     const minPlayersEl = item.querySelector('minplayers');
     const maxPlayersEl = item.querySelector('maxplayers');
     const minPlayers = minPlayersEl ? parseInt(minPlayersEl.getAttribute('value'), 10) : null;
     const maxPlayers = maxPlayersEl ? parseInt(maxPlayersEl.getAttribute('value'), 10) : null;
 
-    // 플레이 타임
     const minTimeEl = item.querySelector('minplaytime');
     const maxTimeEl = item.querySelector('maxplaytime');
     const playTime = maxTimeEl ? maxTimeEl.getAttribute('value') : (minTimeEl ? minTimeEl.getAttribute('value') : '');
 
-    // 베스트 인원 (Community Poll 계산)
     const bestPlayers = this.calculateBestPlayers(item);
 
-    // 긱 웨이트(난이도) 및 시트 난이도로 변환
     const weightEl = item.querySelector('statistics ratings averageweight');
     const bggWeight = weightEl ? parseFloat(weightEl.getAttribute('value')) : 0;
     const difficulty = this.convertWeightToDifficulty(bggWeight);
 
-    // 긱 평점
     const ratingEl = item.querySelector('statistics ratings average');
     const bggRating = ratingEl ? parseFloat(ratingEl.getAttribute('value')).toFixed(1) : '';
 
-    // 게임 시스템 / 메커니즘 추출
     const mechanics = [];
     item.querySelectorAll('link[type="boardgamemechanic"]').forEach(link => {
       const enVal = link.getAttribute('value');
@@ -215,7 +204,7 @@ class BGGService {
       difficulty: difficulty,
       bggWeight: bggWeight ? bggWeight.toFixed(2) : '',
       bggRating: bggRating,
-      system: mechanics.slice(0, 4).join(', '), // 주요 시스템 상위 4개
+      system: mechanics.slice(0, 4).join(', '),
       playTime: playTime ? `${playTime}분` : '',
       description: (item.querySelector('description') ? item.querySelector('description').textContent : '')
         .replace(/&#10;/g, ' ').replace(/&quot;/g, '"').replace(/&amp;/g, '&')
@@ -223,8 +212,47 @@ class BGGService {
   }
 
   /**
-   * 커뮤니티 투표(suggested_numplayers)로부터 베스트 인원 도출
+   * [Phase 2] 3. BGG 사용자 컬렉션/위시리스트 API 파싱 (Collection API)
+   * @param {string} username BGG 계정 ID
+   * @param {string} type 'own' | 'wishlist'
    */
+  async getUserCollection(username, type = 'own') {
+    if (!username || !username.trim()) return [];
+
+    let queryParam = type === 'wishlist' ? 'wishlist=1' : 'own=1';
+    const url = `https://boardgamegeek.com/xmlapi2/collection?username=${encodeURIComponent(username.trim())}&${queryParam}&stats=1`;
+    const xmlDoc = await this.fetchXml(url);
+
+    const items = xmlDoc.querySelectorAll('item');
+    const results = [];
+
+    items.forEach(item => {
+      const nameEl = item.querySelector('name');
+      const statsEl = item.querySelector('stats');
+
+      const minP = statsEl ? parseInt(statsEl.getAttribute('minplayers'), 10) : null;
+      const maxP = statsEl ? parseInt(statsEl.getAttribute('maxplayers'), 10) : null;
+      const playTime = statsEl ? statsEl.getAttribute('maxplaytime') : '';
+
+      const ratingEl = item.querySelector('stats rating averageweight');
+      const weight = ratingEl ? parseFloat(ratingEl.getAttribute('value')) : 0;
+      const diff = this.convertWeightToDifficulty(weight);
+
+      const name = nameEl ? nameEl.textContent : 'BGG Game';
+
+      results.push({
+        name: name,
+        minPlayers: minP,
+        maxPlayers: maxP,
+        difficulty: diff,
+        owner: `${username} (${type === 'wishlist' ? '위시' : 'BGG'})`,
+        notes: `BGG ${type === 'wishlist' ? '위시리스트' : '컬렉션'} 임포트 ${playTime ? '/ 플레이시간: ' + playTime + '분' : ''}`
+      });
+    });
+
+    return results;
+  }
+
   calculateBestPlayers(item) {
     const poll = item.querySelector('poll[name="suggested_numplayers"]');
     if (!poll) return '';
@@ -248,9 +276,6 @@ class BGGService {
     return bestNum ? bestNum.replace('+', '인+') : '';
   }
 
-  /**
-   * BGG Weight (1.0 ~ 5.0) -> 시트 난이도 (입문, 하, 중하, 중, 상) 매핑
-   */
   convertWeightToDifficulty(weight) {
     if (!weight || weight === 0) return '';
     if (weight < 1.6) return '입문';
