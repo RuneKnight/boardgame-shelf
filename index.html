@@ -1345,6 +1345,17 @@
             </label>
           </div>
 
+          <!-- Gemini API Key (BYOK: Bring Your Own Key) -->
+          <div>
+            <label class="block font-semibold text-slate-700 dark:text-slate-300 mb-1 flex items-center justify-between">
+              <span>Google Gemini API Key (BYOK 💰 비용 0원)</span>
+              <span class="text-[10px] text-emerald-600 font-bold bg-emerald-50 dark:bg-emerald-950/60 px-1.5 py-0.5 rounded">RPD 1,500회 무료</span>
+            </label>
+            <input v-model="settingsForm.geminiApiKey" type="password" placeholder="AI Studio에서 발급받은 Gemini API Key 입력 (AIzaSy...)"
+                   class="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500" />
+            <p class="text-[11px] text-slate-400 mt-1">Google AI Studio에서 발급받은 무료 API Key를 등록하면 개인 무료 한도로 AI 추천을 이용할 수 있습니다. (미입력 시 내장 0원 규칙 파서 동작)</p>
+          </div>
+
           <!-- BGG API Token -->
           <div>
             <label class="block font-semibold text-slate-700 dark:text-slate-300 mb-1">

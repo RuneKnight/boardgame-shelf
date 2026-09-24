@@ -110,6 +110,7 @@ createApp({
     const settingsForm = ref({
       csvUrl: '',
       gasUrl: '',
+      geminiApiKey: '',
       bggToken: ''
     });
 
@@ -255,7 +256,7 @@ createApp({
       isAiModalOpen.value = true;
     };
 
-    const runAiRecommendation = () => {
+    const runAiRecommendation = async () => {
       if (!aiPromptInput.value.trim()) {
         showToast('원하는 모임 상황이나 조건을 입력해주세요.', 'error');
         return;
@@ -263,10 +264,14 @@ createApp({
       isAiThinking.value = true;
       aiRecommendations.value = [];
 
-      setTimeout(() => {
-        aiRecommendations.value = recommendGamesByAiPrompt(aiPromptInput.value, games.value);
+      try {
+        const apiKey = sheetsService.settings.geminiApiKey || '';
+        aiRecommendations.value = await recommendGamesByAiPrompt(aiPromptInput.value, games.value, apiKey);
+      } catch (err) {
+        showToast('AI 추천 중 오류가 발생했습니다.', 'error');
+      } finally {
         isAiThinking.value = false;
-      }, 500);
+      }
     };
 
     // 다크모드 토글
@@ -645,6 +650,7 @@ createApp({
       settingsForm.value = {
         csvUrl: current.csvUrl || '',
         gasUrl: current.gasUrl || '',
+        geminiApiKey: current.geminiApiKey || '',
         bggToken: current.bggToken || ''
       };
       isSettingsModalOpen.value = true;

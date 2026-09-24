@@ -18,6 +18,7 @@ class SheetsService {
       csvUrl: DEFAULT_CSV_URL,
       gasUrl: "", // Google Apps Script Web App URL (실시간 읽기/쓰기 100% 지원)
       bggToken: "",
+      geminiApiKey: "", // BYOK (Bring Your Own Key) 개인 Gemini API Key
       bggProxy: "https://api.allorigins.win/raw?url="
     };
     if (saved) {
